@@ -108,11 +108,11 @@ inline int getMHAMaskPackedSize(int smVersion, nvinfer1::DataType dataType, int 
     {
         if (sequenceLength == 64)
         {
-            packedSize = (dataType == nvinfer1::DataType::kHALF ? packedMaskSize64 : packedSize);
+            packedSize = packedMaskSize64;
         }
         else if (sequenceLength == 96)
         {
-            packedSize = (dataType == nvinfer1::DataType::kHALF ? packedMaskSize96 : packedSize);
+            packedSize = packedMaskSize96;
         }
         else if (sequenceLength == 128)
         {
