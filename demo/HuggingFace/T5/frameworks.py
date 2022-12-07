@@ -74,9 +74,8 @@ class T5FHuggingFace(FrameworkCommand):
 
         trt_t5_config = self.config
         metadata_serialized = trt_t5_config.get_metadata_string(metadata)
-        workspace_dir = workspace.get_path()
-
-        pytorch_model_dir = os.path.join(workspace_dir, metadata_serialized)
+        workspace_dir, encoder_onnx_root, decoder_onnx_root = workspace.set_model_path(metadata_serialized, is_encoder_decoder = True)
+        pytorch_model_dir = os.path.join(workspace_dir, "pytorch_model")
         # We keep track of the generated torch location for cleanup later
         self.torch_t5_dir = pytorch_model_dir
 
@@ -96,14 +95,10 @@ class T5FHuggingFace(FrameworkCommand):
                 pytorch_model_dir,
                 use_cache = metadata.other.kv_cache
             )
-
-        # These ONNX models can be converted using special encoder and decoder classes.
-        root_onnx_model_name = "{}.onnx".format(metadata_serialized)
-        root_onnx_model_fpath = os.path.join(
-            os.getcwd(), workspace_dir, root_onnx_model_name
-        )
-        encoder_onnx_model_fpath = root_onnx_model_fpath + "-encoder.onnx"
-        decoder_onnx_model_fpath = root_onnx_model_fpath + "-decoder-with-lm-head.onnx"
+        
+        # These ONNX models can be converted using special encoder and decoder classes.        
+        encoder_onnx_model_fpath = os.path.join(encoder_onnx_root, metadata_serialized + "-encoder.onnx")
+        decoder_onnx_model_fpath = os.path.join(decoder_onnx_root, metadata_serialized + "-decoder-with-lm-head.onnx")
 
         t5_encoder = T5EncoderTorchFile(model, metadata)
         t5_decoder = T5DecoderTorchFile(model, metadata)
@@ -150,15 +145,6 @@ class T5FHuggingFace(FrameworkCommand):
                 self.onnx_t5_decoder.cleanup()
             if self.onnx_t5_encoder is not None:
                 self.onnx_t5_encoder.cleanup()
-
-            # Remove any onnx external files by removing integer named values and weight files
-            workspace_path = workspace.get_path()
-            for d in os.listdir(workspace_path):
-                fpath = os.path.join(workspace_path, d)
-                if os.path.isfile(fpath) and os.path.splitext(d)[1] == ".weight":
-                    os.remove(fpath)
-                elif d.isnumeric():
-                    os.remove(fpath)
 
         if not keep_pytorch_model:
             # Using rmtree can be dangerous, have user confirm before deleting.
@@ -276,7 +262,7 @@ class T5FHuggingFace(FrameworkCommand):
 
         return NetworkResult(
             input=inference_input,
-            output_tensor=encoder_last_hidden_state,
+            output_tensor=decoder_output,
             semantic_output=semantic_outputs,
             median_runtime=runtime,
             models=network_fpaths,

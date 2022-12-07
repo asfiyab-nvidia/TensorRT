@@ -37,7 +37,7 @@ import tensorrt as trt
 import torch
 
 # huggingface
-from transformers import BartTokenizer, BartConfig
+from transformers import BartTokenizer, BartConfig, MBart50Tokenizer
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from transformers.configuration_utils import PretrainedConfig
 from transformers.generation_utils import GenerationMixin
@@ -591,6 +591,9 @@ class BARTTRT(TRTInferenceCommand):
         if not keep_trt_engine:
             self.BART_trt_encoder_engine.cleanup()
             self.BART_trt_decoder_engine.cleanup()
+            # TODO: Avoid using workspace.metadata to handle non_kv removals.
+            if workspace.metadata.other.kv_cache:
+                self.BART_trt_decoder_engine_non_kv.cleanup()
 
         self.frameworks_cmd.cleanup(workspace, keep_onnx_model, keep_torch_model)
 
@@ -689,8 +692,10 @@ class BARTTRT(TRTInferenceCommand):
         benchmarking_mode: bool = False,
         benchmarking_args: BARTTRTBenchmarkingArgs = None,
     ) -> Union[NetworkResult, BenchmarkingResult]:
-
-        tokenizer = BartTokenizer.from_pretrained(metadata.variant)
+        if "mbart" not in metadata.variant:
+            tokenizer = BartTokenizer.from_pretrained(metadata.variant)
+        else:
+            tokenizer = MBart50Tokenizer.from_pretrained(metadata.variant, src_lang="en_XX")
 
         # Prepare the input tokens and find output sequence length.
         if not benchmarking_mode:
@@ -790,7 +795,7 @@ class BARTTRT(TRTInferenceCommand):
 
         return NetworkResult(
             input=inference_input,
-            output_tensor=encoder_last_hidden_state,
+            output_tensor=decoder_output,
             semantic_output=semantic_outputs,
             median_runtime=runtime,
             models=models,
@@ -802,7 +807,11 @@ class BARTTRT(TRTInferenceCommand):
         encoder_input: str,
         decoder_input: str,
     ):
-        tokenizer = BartTokenizer.from_pretrained(metadata.variant)
+        if "mbart" not in metadata.variant:
+            tokenizer = BartTokenizer.from_pretrained(metadata.variant)
+        else:
+            tokenizer = MBart50Tokenizer.from_pretrained(metadata.variant, src_lang="en_XX")
+
         encoder_input_ids = tokenizer([encoder_input], padding=True, return_tensors="pt").input_ids
         decoder_input_ids = tokenizer([decoder_input], padding=True, return_tensors="pt").input_ids
 
@@ -971,13 +980,38 @@ class BARTTRT(TRTInferenceCommand):
             preview_features=preview_features
         )
 
-        self.BART_trt_decoder_engine = BARTDecoderONNXFile(
-            decoder_onnx_fpath, metadata
-        ).as_trt_engine(
-            decoder_onnx_fpath + "-{}.engine".format(engine_tag),
-            profiles=decoder_profiles,
-            preview_features=preview_features
-        )
+        if not metadata.other.kv_cache:
+            self.BART_trt_decoder_engine = BARTDecoderONNXFile(
+                decoder_onnx_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles,
+                preview_features=preview_features
+            )
+        else:
+            decoder_root, decoder_fullname = os.path.split(decoder_onnx_fpath)
+            # Split kv and non kv engines into separate folders to avoid weight overlap
+            non_kv_root = os.path.join(decoder_root, "non-kv")
+            kv_root = os.path.join(decoder_root, "kv")
+            decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
+            decoder_onnx_non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
+            decoder_onnx_kv_fpath = os.path.join(kv_root, decoder_fullname)
+            self.BART_trt_decoder_engine = BARTDecoderONNXFile(
+                decoder_onnx_kv_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_kv_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles,
+                preview_features=preview_features
+            )
+            # dual-engine approach: still need to setup non-kv engine in kv mode
+            # note: workspace cleanup is not handled for these extra non-kv files
+            self.BART_trt_decoder_engine_non_kv = BARTDecoderONNXFile(
+                decoder_onnx_non_kv_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_non_kv_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles_non_kv,
+                preview_features=preview_features
+            )
 
         # Create BARTTRTEncoder and BARTTRTDecoder instances.
         tfm_config = BartConfig(
@@ -992,16 +1026,6 @@ class BARTTRT(TRTInferenceCommand):
         )
 
         if metadata.other.kv_cache:
-            # dual-engine approach: still need to setup non-kv engine in kv mode
-            # note: workspace cleanup is not handled for these extra non-kv files
-            decoder_onnx_fpath_non_kv = os.path.splitext(decoder_onnx_fpath)[0] + '-non-kv' + os.path.splitext(decoder_onnx_fpath)[1]
-            self.BART_trt_decoder_engine_non_kv = BARTDecoderONNXFile(
-                decoder_onnx_fpath_non_kv, metadata
-            ).as_trt_engine(
-                decoder_onnx_fpath_non_kv + "-{}.engine".format(engine_tag),
-                profiles=decoder_profiles_non_kv,
-                preview_features=preview_features
-            )
             # switch between BARTTRTDecoder is impossible (becase HF decoding step is bound to one decoder). Therefore, we need to add the non-kv engines inside the same decoder --> decoder contains two TRT engines
             self.BART_trt_decoder.set_non_kv_engine_for_kv_mode(self.BART_trt_decoder_engine_non_kv)
     

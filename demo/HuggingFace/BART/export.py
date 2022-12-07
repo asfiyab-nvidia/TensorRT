@@ -289,6 +289,14 @@ class BARTDecoderConverter(ModelFileConverter):
             decoder_output = decoder_with_lm_head_and_bias(input_ids[:,:-1], encoder_hidden_states) # decoder output at t-1 step (logits, past_key_values from 0 to t-1)
             past_key_values = decoder_output[1]
 
+            decoder_root, decoder_fullname = os.path.split(output_fpath)
+            # Split kv and non kv onnx into separate folders to avoid weight overlap
+            non_kv_root = os.path.join(decoder_root, "non-kv")
+            kv_root = os.path.join(decoder_root, "kv")
+            decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
+            non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
+            kv_fpath = os.path.join(kv_root, decoder_fullname)
+
             # This code allows for huggingface compatible torch class to use onnx exporter (change just before onnx.export)
             old_forward = decoder_with_lm_head_and_bias.forward
             def _export_forward(input_ids, encoder_hidden_states, past_key_values):
@@ -303,7 +311,7 @@ class BARTDecoderConverter(ModelFileConverter):
                 # (2) since past_key_values is kwargs, ideally use "(input_ids[:,-1:], encoder_hidden_states, {"past_key_values": past_key_values})",
                 # but onnx.export seems to unable to take kwargs properly (although PyTorch 1.11 claims it supports already). 
                 # Therefore, we need to wrap inside _export_forward() and make past_key_values indeed a kwargs
-                output_fpath,
+                kv_fpath,
                 export_params=True,
                 opset_version=12,
                 input_names=inputs.get_names(),
@@ -321,9 +329,6 @@ class BARTDecoderConverter(ModelFileConverter):
                 result = old_forward(input_ids, encoder_hidden_states, use_cache=use_cache)
                 return (result[0], result[1])
             decoder_with_lm_head_and_bias.forward = _export_forward
-            
-            fpath_root, fpath_ext = os.path.splitext(output_fpath)
-            output_fpath_non_kv = fpath_root + '-non-kv' + fpath_ext
 
             # inputs are same as non-kv model
             # outputs are same as kv model
@@ -334,7 +339,7 @@ class BARTDecoderConverter(ModelFileConverter):
             torch.onnx.export(
                 decoder_with_lm_head_and_bias,
                 (input_ids[:,-1:], encoder_hidden_states, True),
-                output_fpath_non_kv,
+                non_kv_fpath,
                 export_params=True,
                 opset_version=12,
                 input_names=inputs_non_kv.get_names(),

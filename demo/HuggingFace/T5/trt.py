@@ -463,6 +463,9 @@ class T5TRT(TRTInferenceCommand):
         if not keep_trt_engine:
             self.t5_trt_encoder_engine.cleanup()
             self.t5_trt_decoder_engine.cleanup()
+            # TODO: Avoid using workspace.metadata to handle non_kv removals.
+            if workspace.metadata.other.kv_cache:
+                self.T5_trt_decoder_engine_non_kv.cleanup()
 
         self.frameworks_cmd.cleanup(workspace, keep_onnx_model, keep_torch_model)
 
@@ -603,7 +606,7 @@ class T5TRT(TRTInferenceCommand):
 
         return NetworkResult(
             input=inference_input,
-            output_tensor=encoder_last_hidden_state,
+            output_tensor=decoder_output,
             semantic_output=semantic_outputs,
             median_runtime=runtime,
             models=models,
@@ -781,17 +784,43 @@ class T5TRT(TRTInferenceCommand):
         self.t5_trt_encoder_engine = T5EncoderONNXFile(
             encoder_onnx_fpath, metadata
         ).as_trt_engine(
-            encoder_onnx_fpath + "-{}.engine".format(engine_tag).replace(f"-beam{num_beams}", ""), # encoder engine name not affected by beam search
+            os.path.splitext(encoder_onnx_fpath)[0] + "-{}.engine".format(engine_tag).replace(f"-beam{num_beams}", ""), # encoder engine name not affected by beam search
             profiles=encoder_profiles,
             preview_features=preview_features
         )
-        self.t5_trt_decoder_engine = T5DecoderONNXFile(
-            decoder_onnx_fpath, metadata
-        ).as_trt_engine(
-            decoder_onnx_fpath + "-{}.engine".format(engine_tag),
-            profiles=decoder_profiles,
-            preview_features=preview_features
-        )
+
+        if not metadata.other.kv_cache:
+            self.t5_trt_decoder_engine = T5DecoderONNXFile(
+                decoder_onnx_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles,
+                preview_features=preview_features
+            )
+        else:
+            decoder_root, decoder_fullname = os.path.split(decoder_onnx_fpath)
+            # Split kv and non kv engines into separate folders to avoid weight overlap
+            non_kv_root = os.path.join(decoder_root, "non-kv")
+            kv_root = os.path.join(decoder_root, "kv")
+            decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
+            decoder_onnx_non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
+            decoder_onnx_kv_fpath = os.path.join(kv_root, decoder_fullname)
+            self.t5_trt_decoder_engine = T5DecoderONNXFile(
+                decoder_onnx_kv_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_kv_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles,
+                preview_features=preview_features
+            )
+            # dual-engine approach: still need to setup non-kv engine in kv mode
+            # note: workspace cleanup is not handled for these extra non-kv files
+            self.T5_trt_decoder_engine_non_kv = T5DecoderONNXFile(
+                decoder_onnx_non_kv_fpath, metadata
+            ).as_trt_engine(
+                os.path.splitext(decoder_onnx_non_kv_fpath)[0] + "-{}.engine".format(engine_tag),
+                profiles=decoder_profiles_non_kv,
+                preview_features=preview_features
+            )
 
         # Create T5TRTEncoder and T5TRTDecoder instances.
         tfm_config = T5Config(
@@ -806,17 +835,6 @@ class T5TRT(TRTInferenceCommand):
         )
 
         if metadata.other.kv_cache:
-            # dual-engine approach: still need to setup non-kv engine in kv mode
-            # note: workspace cleanup is not handled for these extra non-kv files
-            decoder_onnx_fpath_non_kv = os.path.splitext(decoder_onnx_fpath)[0] + '-non-kv' + os.path.splitext(decoder_onnx_fpath)[1]
-            self.T5_trt_decoder_engine_non_kv = T5DecoderONNXFile(
-                decoder_onnx_fpath_non_kv, metadata
-            ).as_trt_engine(
-                decoder_onnx_fpath_non_kv + "-{}.engine".format(engine_tag),
-                profiles=decoder_profiles_non_kv,
-                preview_features=preview_features
-            )
-
             # switch between T5TRTDecoder is impossible (becase HF decoding step is bound to one decoder). Therefore, we need to add the non-kv engines inside the same decoder --> decoder contains two TRT engines
             self.t5_trt_decoder.set_non_kv_engine_for_kv_mode(self.T5_trt_decoder_engine_non_kv)
 

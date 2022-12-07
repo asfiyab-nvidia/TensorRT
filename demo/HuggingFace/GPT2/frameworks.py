@@ -75,9 +75,8 @@ class GPT2HuggingFace(FrameworkCommand):
 
         trt_gpt2_config = self.config
         metadata_serialized = trt_gpt2_config.get_metadata_string(metadata)
-        workspace_dir = workspace.get_path()
-
-        pytorch_model_dir = os.path.join(workspace_dir, metadata_serialized)
+        workspace_dir, _ , onnx_root = workspace.set_model_path(metadata_serialized, is_encoder_decoder = False)
+        pytorch_model_dir = os.path.join(workspace_dir, "pytorch_model")
         # We keep track of the generated torch location for cleanup later
         self.torch_gpt2_dir = pytorch_model_dir
 
@@ -96,12 +95,8 @@ class GPT2HuggingFace(FrameworkCommand):
             )
             model = AutoModelForCausalLM.from_config(tfm_config).from_pretrained(pytorch_model_dir)
             model.config.use_cache = cache_variant # somehow the use_cache config automatically set to True even though specified in tfm_config before. Force change
-
-        root_onnx_model_name = "{}.onnx".format(metadata_serialized)
-        root_onnx_model_fpath = os.path.join(
-            os.getcwd(), workspace_dir, root_onnx_model_name
-        )
-        onnx_model_fpath = root_onnx_model_fpath
+        
+        onnx_model_fpath = os.path.join(onnx_root, metadata_serialized + ".onnx")
 
         gpt2 = GPT2TorchFile(model, metadata)
         self.onnx_gpt2 = gpt2.as_onnx_model(onnx_model_fpath, force_overwrite=False)
@@ -136,15 +131,6 @@ class GPT2HuggingFace(FrameworkCommand):
         # Clean-up generated files
         if not save_onnx_model and self.onnx_gpt2 is not None:
             self.onnx_gpt2.cleanup()
-
-            # Remove any onnx external files by removing integer named values and weight files
-            workspace_path = workspace.get_path()
-            for d in os.listdir(workspace_path):
-                fpath = os.path.join(workspace_path, d)
-                if os.path.isfile(fpath) and os.path.splitext(d)[1] == ".weight":
-                    os.remove(fpath)
-                elif d.isnumeric():
-                    os.remove(fpath)
 
         if not keep_pytorch_model:
             # Using rmtree can be dangerous, have user confirm before deleting.

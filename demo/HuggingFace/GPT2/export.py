@@ -220,6 +220,14 @@ class GPT2Converter(ModelFileConverter):
             decoder_output = gpt2_model(input_ids[:,:-1])
             past_key_values = decoder_output[1]
             
+            decoder_root, decoder_fullname = os.path.split(output_fpath)
+            # Split kv and non kv onnx into separate folders to avoid weight overlap
+            non_kv_root = os.path.join(decoder_root, "non-kv")
+            kv_root = os.path.join(decoder_root, "kv")
+            decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
+            non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
+            kv_fpath = os.path.join(kv_root, decoder_fullname)
+            
             # Exporting the kv cache engine
             old_forward = gpt2_model.forward
             def _export_forward(input_ids, past_key_values):
@@ -230,7 +238,7 @@ class GPT2Converter(ModelFileConverter):
             torch.onnx._export(
                 gpt2_model,
                 (input_ids[:,-1:], past_key_values),
-                output_fpath,
+                kv_fpath,
                 opset_version=13,
                 input_names=inputs.get_names(),
                 output_names=outputs.get_names(),
@@ -248,8 +256,6 @@ class GPT2Converter(ModelFileConverter):
                 return (result[0], result[1])
             gpt2_model.forward = _export_forward_non_kv
             
-            fpath_root, fpath_ext = os.path.splitext(output_fpath)
-            output_fpath_non_kv = fpath_root + '-non-kv' + fpath_ext
             # inputs are same as non-kv model
             # outputs are same as kv model
             dict_inputs = inputs.get_dims()
@@ -258,7 +264,7 @@ class GPT2Converter(ModelFileConverter):
             torch.onnx.export(
                 gpt2_model,
                 (input_ids, True),
-                output_fpath_non_kv,
+                non_kv_fpath,
                 export_params=True,
                 opset_version=13,
                 input_names=inputs_non_kv.get_names(),
