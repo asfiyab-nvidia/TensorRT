@@ -167,6 +167,11 @@ target_link_libraries(${SHARED_TARGET}
     ${CMAKE_DL_LIBS}
 )
 
+# Needed when static linking CUDART
+if (NOT MSVC)
+    target_link_libraries(${SHARED_TARGET} Threads::Threads ${RT_LIB})
+endif()
+
 ################################## STATIC LIBRARY #######################################
 
 add_library(${STATIC_TARGET} STATIC
