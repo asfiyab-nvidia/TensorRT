@@ -23,9 +23,10 @@ from typing import List, Union
 
 # huggingface
 from transformers import (
-    GPT2LMHeadModel,
+    AutoConfig,
+    AutoModelForCausalLM,
+    # GPT-J uses GPT2 tokenizer
     GPT2Tokenizer,
-    GPT2Config,
 )
 
 # torch
@@ -81,11 +82,11 @@ class GPT2HuggingFace(FrameworkCommand):
         self.torch_gpt2_dir = pytorch_model_dir
 
         model = None
-        tfm_config = GPT2Config(use_cache=cache_variant)
+        tfm_config = AutoConfig.from_pretrained(metadata.variant, use_cache=cache_variant)
 
         if not os.path.exists(pytorch_model_dir):
             # Generate the pre-trained weights
-            model = GPT2LMHeadModel(tfm_config).from_pretrained(metadata.variant)
+            model = AutoModelForCausalLM.from_config(tfm_config).from_pretrained(metadata.variant)
             model.config.use_cache = cache_variant # somehow the use_cache config automatically set to True even though specified in tfm_config before. Force change
             model.save_pretrained(pytorch_model_dir)
             print("Pytorch Model saved to {}".format(pytorch_model_dir))
@@ -93,7 +94,7 @@ class GPT2HuggingFace(FrameworkCommand):
             print(
                 "Frameworks file already exists, skipping generation and loading from file instead."
             )
-            model = GPT2LMHeadModel(tfm_config).from_pretrained(pytorch_model_dir)
+            model = AutoModelForCausalLM.from_config(tfm_config).from_pretrained(pytorch_model_dir)
             model.config.use_cache = cache_variant # somehow the use_cache config automatically set to True even though specified in tfm_config before. Force change
 
         root_onnx_model_name = "{}.onnx".format(metadata_serialized)
@@ -168,8 +169,8 @@ class GPT2HuggingFace(FrameworkCommand):
 
         # By default, HuggingFace model structure is one giant file.
         gpt2_torch_fpath = network_fpaths.torch[0].fpath
-        config = GPT2Config(use_cache=metadata.other.kv_cache)
-        gpt2_model = GPT2LMHeadModel(config).from_pretrained(gpt2_torch_fpath)
+        config = AutoConfig.from_pretrained(metadata.variant, use_cache=metadata.other.kv_cache)
+        gpt2_model = AutoModelForCausalLM.from_config(config).from_pretrained(gpt2_torch_fpath)
         gpt2_torch = GPT2TorchFile.TorchModule(
             gpt2_model.transformer, gpt2_model.lm_head, gpt2_model.config
         )
@@ -198,7 +199,7 @@ class GPT2HuggingFace(FrameworkCommand):
         else:
             input_seq_len = benchmarking_args.input_seq_len
             output_seq_len = benchmarking_args.output_seq_len
-            input_ids = torch.randint(0, GPT2ModelTRTConfig.VOCAB_SIZE, (batch_size, input_seq_len))
+            input_ids = torch.randint(0, GPT2ModelTRTConfig.VOCAB_SIZE[metadata.variant], (batch_size, input_seq_len))
 
         # get single decoder iteration inference timing profile
         _, decoder_e2e_time = gpt2_inference(

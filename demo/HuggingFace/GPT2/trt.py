@@ -121,6 +121,7 @@ class GPT2TRTDecoder(TRTHFRunner):
         benchmarking_args: GPT2BenchmarkingArgs = None
     ):
         super().__init__(trt_engine_file, network_metadata, hf_config, batch_size = batch_size)
+        self.network_metadata = network_metadata
         # In benchmarking mode, if input_profile_max is provided, should use that as max_sequence_length
         if benchmarking_args is not None:
             if benchmarking_args.input_profile_max_len is not None:
@@ -148,11 +149,12 @@ class GPT2TRTDecoder(TRTHFRunner):
         }
 
         self.output_shapes = {
-            "logits": (self.batch_size * num_beams, self.max_output_length, GPT2ModelTRTConfig.VOCAB_SIZE)
+            "logits": (self.batch_size * num_beams, self.max_output_length, GPT2ModelTRTConfig.VOCAB_SIZE[network_metadata.variant])
         }
         self.output_types = {
             "logits": torch.float32
         }
+        self.main_input_name = "input_ids"
 
         self.num_heads = GPT2ModelTRTConfig.NUMBER_OF_HEADS[network_metadata.variant]
         self.embedding_size_per_head = GPT2ModelTRTConfig.EMBEDDING_SIZE[network_metadata.variant] // self.num_heads
@@ -259,7 +261,7 @@ class GPT2TRTDecoder(TRTHFRunner):
     def forward(self, input_ids, *args, **kwargs):
         bs = input_ids.shape[0]
         input_length = input_ids.shape[1]
-        vocab_size = GPT2ModelTRTConfig.VOCAB_SIZE
+        vocab_size = GPT2ModelTRTConfig.VOCAB_SIZE[self.network_metadata.variant]
         max_length = self.max_sequence_length
         use_cache = kwargs.get("use_cache", False)
         # flag for switch between dual engines
@@ -407,7 +409,7 @@ class GPT2TRT(TRTInferenceCommand):
         else:
             input_seq_len = benchmarking_args.input_seq_len
             output_seq_len = benchmarking_args.output_seq_len
-            input_ids = torch.randint(0, GPT2ModelTRTConfig.VOCAB_SIZE, (batch_size, input_seq_len))
+            input_ids = torch.randint(0, GPT2ModelTRTConfig.VOCAB_SIZE[metadata.variant], (batch_size, input_seq_len))
 
         # get single decoder iteration inference timing profile
         _, decoder_e2e_time = gpt2_inference(

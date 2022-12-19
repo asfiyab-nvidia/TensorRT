@@ -6,7 +6,7 @@ Currently, this repository supports the following models:
 
 1. [GPT2 (text generation task)](https://huggingface.co/transformers/model_doc/gpt2.html). The sample supports following variants of GPT2:
 
-    gpt2 (117M), gpt2-large (774M)
+    gpt2 (117M), gpt2-medium (345M), gpt2-large (774M), gpt2-xl (1558M), EleutherAI/gpt-j-6B (6053M)
 
 2. [T5 (translation, premise task)](https://huggingface.co/transformers/model_doc/t5.html). The sample supports following variants of T5:
 
@@ -55,7 +55,7 @@ pip3 install -r requirements.txt
 The `compare` action will by default compare all implemented frameworks, e.g., PyTorch frameworks & TRT (for GPT2), PyTorch framework & TRT & OnnxRT (for T5 and BART).
 
 ```python
-python3 run.py compare GPT2 --variant [gpt2 | gpt2-large] --working-dir temp
+python3 run.py compare GPT2 --variant [gpt2 | gpt2-medium | gpt2-large | gpt2-xl | EleutherAI/gpt-j-6B] --working-dir temp
 ```
 
 The above script compares the performance of PyTorch framework inference and TensorRT inference for GPT2:
@@ -72,7 +72,7 @@ Notes: `--variant` designates the pre-trained model for testing. `--working-dir`
 The `run` action will run the specific script under the model directory.
 
 ```python
-python3 run.py run GPT2 [frameworks | trt] --variant [gpt2 | gpt2-large] --working-dir temp
+python3 run.py run GPT2 [frameworks | trt] --variant [gpt2 | gpt2-medium | gpt2-large | gpt2-xl | EleutherAI/gpt-j-6B] --working-dir temp
 ```
 
 Expected output:
@@ -150,7 +150,7 @@ Notes:
 The `benchmark` action will benchmark the specific script under the model directory using random input data with specified input/output sequence lengths. Note that since the input data is random, the accuracy is not guaranteed, but the benchmarking mode is useful for performance measurement since it allows arbitrary and controllable input/output sequence lengths with early stopping being disabled and allows apples-to-apples performance comparisons across different frameworks.
 
 ```python
-python3 run.py benchmark GPT2 [frameworks | trt] --variant [gpt2 | gpt2-large] --working-dir temp --input-seq-len 128 --output-seq-len 256
+python3 run.py benchmark GPT2 [frameworks | trt] --variant [gpt2 | gpt2-medium | gpt2-large | gpt2-xl | EleutherAI/gpt-j-6B] --working-dir temp --input-seq-len 128 --output-seq-len 256
 ```
 
 ## Testing

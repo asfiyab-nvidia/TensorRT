@@ -61,6 +61,7 @@ class GPT2TorchFile(TorchModelFile):
             self.lm_head = lm_head
             self.config = config
             self.device = "cuda" # WAR to avoid beam search in framework
+            self.main_input_name = self.transformer.main_input_name
 
         def prepare_inputs_for_generation(self, input_ids, past = None, use_cache=None, **kwargs):
             # Todo (@pchadha): add position_ids, token_type_ids support
@@ -205,7 +206,7 @@ class GPT2Converter(ModelFileConverter):
                 gpt2_model,
                 input_ids,
                 output_fpath,
-                opset_version=12,
+                opset_version=13,
                 input_names=inputs.get_names(),
                 output_names=outputs.get_names(),
                 dynamic_axes={
@@ -230,7 +231,7 @@ class GPT2Converter(ModelFileConverter):
                 gpt2_model,
                 (input_ids[:,-1:], past_key_values),
                 output_fpath,
-                opset_version=12,
+                opset_version=13,
                 input_names=inputs.get_names(),
                 output_names=outputs.get_names(),
                 dynamic_axes={
@@ -259,7 +260,7 @@ class GPT2Converter(ModelFileConverter):
                 (input_ids, True),
                 output_fpath_non_kv,
                 export_params=True,
-                opset_version=12,
+                opset_version=13,
                 input_names=inputs_non_kv.get_names(),
                 output_names=outputs.get_names(),
                 dynamic_axes={
