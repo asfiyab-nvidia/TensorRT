@@ -349,8 +349,15 @@ class T5DecoderConverter(ModelFileConverter):
 
         if network_metadata.precision.fp16:
             G_LOGGER.debug("Clamping FP16 weights for T5")
-            move_t5_cast_op(output_fpath, output_fpath)
-            clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
+            if network_metadata.other.kv_cache:
+                # both onnx files need clamp
+                move_t5_cast_op(non_kv_fpath, non_kv_fpath)
+                clamp_weights_onnx_to_fp16_bounds(non_kv_fpath, non_kv_fpath)
+                move_t5_cast_op(kv_fpath, kv_fpath)
+                clamp_weights_onnx_to_fp16_bounds(kv_fpath, kv_fpath)
+            else:
+                move_t5_cast_op(output_fpath, output_fpath)
+                clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
 
         return T5DecoderONNXFile(output_fpath, network_metadata)
 

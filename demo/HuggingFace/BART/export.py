@@ -350,7 +350,12 @@ class BARTDecoderConverter(ModelFileConverter):
         if network_metadata.precision.fp16:
             G_LOGGER.debug("Clamping FP16 weights for BART")
             # move_t5_cast_op(output_fpath, output_fpath) # BART doesn't have T5's Add-Cast-Pow ordering issue
-            clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
+            if network_metadata.other.kv_cache:
+                # both onnx files need clamp
+                clamp_weights_onnx_to_fp16_bounds(non_kv_fpath, non_kv_fpath)
+                clamp_weights_onnx_to_fp16_bounds(kv_fpath, kv_fpath)
+            else:
+                clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
 
         return BARTDecoderONNXFile(output_fpath, network_metadata)
 

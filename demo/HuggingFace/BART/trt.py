@@ -664,7 +664,19 @@ class BARTTRT(TRTInferenceCommand):
                 use_cache=use_cache
             )
 
+        self.reset_decoder_state()
+
         return decoder_output
+
+    def reset_decoder_state(self):
+        # During execute_inference, set_encoder_hidden_states_for_inference_cycle will be called in full_inference_greedy anyway to overwrite the saved encoder_hidden_states
+        # But explicit reset this flag is still beneficial
+        self.BART_trt_decoder.persist_encoder_hidden_states = False
+        # Because the same decoder is used for different inputs, need to reset the flags for different inputs.
+        # TODO: In BARTTRTDecoder, maybe a reset function is needed to capture this issue after each task.
+        if self.metadata.other.kv_cache:
+            self.BART_trt_decoder.persist_cross_attention_kv_cache = False
+            self.BART_trt_decoder.use_non_kv_engine = self.metadata.other.kv_cache
 
     def execute_inference(
         self,
@@ -992,6 +1004,7 @@ class BARTTRT(TRTInferenceCommand):
             )
             # switch between BARTTRTDecoder is impossible (becase HF decoding step is bound to one decoder). Therefore, we need to add the non-kv engines inside the same decoder --> decoder contains two TRT engines
             self.BART_trt_decoder.set_non_kv_engine_for_kv_mode(self.BART_trt_decoder_engine_non_kv)
+    
     def run_trt(
         self,
         metadata: NetworkMetadata,
@@ -1032,15 +1045,8 @@ class BARTTRT(TRTInferenceCommand):
                             metadata, hash_onnx_fpath, ninput, timing_profile, batch_size, args.num_beams
                         )
                     )
-                    # During execute_inference, set_encoder_hidden_states_for_inference_cycle will be called in full_inference_greedy anyway to overwrite the saved encoder_hidden_states
-                    # But explicit reset this flag is still beneficial
-                    self.BART_trt_decoder.persist_encoder_hidden_states = False
-                    # Because the same decoder is used for different inputs, need to reset the flags for different inputs.
-                    # TODO: In BARTTRTDecoder, maybe a reset function is needed to capture this issue after each task.
-                    if metadata.other.kv_cache:
-                        self.BART_trt_decoder.persist_cross_attention_kv_cache = False
-                        self.BART_trt_decoder.use_non_kv_engine = metadata.other.kv_cache
-                
+                    self.reset_decoder_state()
+                    
                 if perplexity_reference is not None:
                     assert len(network_input) == len(perplexity_reference), "Encoder and decoder inputs must pair up"
                     

@@ -68,6 +68,22 @@ from T5.export import T5DecoderONNXFile, T5EncoderONNXFile, T5DecoderTRTEngine, 
 from NNDF.models import TRTEngineFile
 from NNDF.logger import G_LOGGER
 
+# from HuggingFace transformers
+from transformers.generation_logits_process import (
+    NoRepeatNGramLogitsProcessor,
+    MinLengthLogitsProcessor,
+    ForcedBOSTokenLogitsProcessor,
+    ForcedEOSTokenLogitsProcessor,
+    LogitsProcessorList,
+)
+from transformers.generation_stopping_criteria import (
+    MaxLengthCriteria,
+    StoppingCriteriaList,
+)
+from transformers.generation_beam_search import (
+    BeamSearchScorer,
+)
+
 class TRTHFRunner(TRTNativeRunner, GenerationMixin):
     """Runner that adds interop support for HF and HF provided greedy_search functions."""
 
@@ -598,6 +614,86 @@ class T5TRT(TRTInferenceCommand):
 
         self.frameworks_cmd.cleanup(workspace, keep_onnx_model, keep_torch_model)
 
+    def generate(
+        self,
+        input_ids,
+        min_length: int = None,
+        max_length: int = None,
+        num_beams: int = 1,
+        use_cache: bool = False,
+        early_stopping: bool = True, # Deprecated
+    ):
+        batch_size = input_ids.shape[0]
+
+        if max_length is None:
+            max_length = T5ModelTRTConfig.MAX_OUTPUT_LENGTH[self.metadata.variant]
+        
+        if min_length is None:
+            min_length = T5ModelTRTConfig.MIN_OUTPUT_LENGTH[self.metadata.variant]
+
+        stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length)])
+        logits_processor = LogitsProcessorList([
+            NoRepeatNGramLogitsProcessor(T5ModelTRTConfig.NO_REPEAT_NGRAM_SIZE), 
+            MinLengthLogitsProcessor(min_length, T5ModelTRTConfig.EOS_TOKEN_ID),
+            ForcedBOSTokenLogitsProcessor(T5ModelTRTConfig.BOS_TOKEN_ID),
+            ForcedEOSTokenLogitsProcessor(max_length, T5ModelTRTConfig.EOS_TOKEN_ID)
+        ]) 
+
+        decoder_input_ids = torch.full(
+            (batch_size, 1), T5ModelTRTConfig.PAD_TOKEN_ID, dtype=torch.int32
+        ).to("cuda")
+        
+        if num_beams == 1:
+            G_LOGGER.info("Running full inference with greedy decoding...")
+            encoder_last_hidden_state = self.t5_trt_encoder(input_ids=input_ids)
+            self.t5_trt_decoder.set_encoder_hidden_states_for_inference_cycle(encoder_last_hidden_state)
+            decoder_output = self.t5_trt_decoder.greedy_search(
+                input_ids=decoder_input_ids,
+                encoder_hidden_states=encoder_last_hidden_state,
+                stopping_criteria=stopping_criteria,
+                logits_processor=logits_processor,
+                use_cache=use_cache
+            )
+        else:
+            G_LOGGER.info(f"Running full inference with beam search (num_beams = {num_beams}) decoding...")
+
+            beam_scorer = BeamSearchScorer(
+                batch_size=batch_size,
+                num_beams=num_beams,
+                device="cuda",
+                do_early_stopping=early_stopping,
+            )
+
+            decoder_input_ids = expand_inputs_for_beam_search(decoder_input_ids, expand_size=num_beams)
+
+            encoder_last_hidden_state = self.t5_trt_encoder(input_ids=input_ids)
+            
+            encoder_last_hidden_state = expand_inputs_for_beam_search(encoder_last_hidden_state, expand_size=num_beams)
+            
+            self.t5_trt_decoder.set_encoder_hidden_states_for_inference_cycle(encoder_last_hidden_state)
+            decoder_output = self.t5_trt_decoder.beam_search(
+                input_ids=decoder_input_ids,
+                beam_scorer=beam_scorer,
+                encoder_hidden_states=encoder_last_hidden_state,
+                stopping_criteria=stopping_criteria,
+                logits_processor=logits_processor,
+                use_cache=use_cache
+            )
+
+        self.reset_decoder_state()
+
+        return decoder_output
+
+    def reset_decoder_state(self):
+        # During execute_inference, set_encoder_hidden_states_for_inference_cycle will be called in full_inference_greedy anyway to overwrite the saved encoder_hidden_states
+        # But explicit reset this flag is still beneficial
+        self.t5_trt_decoder.persist_encoder_hidden_states = False
+        # Because the same decoder is used for different inputs, need to reset the flags for different inputs.
+        # TODO: In T5TRTDecoder, maybe a reset function is needed to capture this issue after each task.
+        if self.metadata.other.kv_cache:
+            self.t5_trt_decoder.persist_cross_attention_kv_cache = False
+            self.t5_trt_decoder.use_non_kv_engine = self.metadata.other.kv_cache
+
     def execute_inference(
         self,
         metadata: NetworkMetadata,
@@ -965,14 +1061,7 @@ class T5TRT(TRTInferenceCommand):
                             metadata, hash_onnx_fpath, ninput, timing_profile, batch_size, args.num_beams
                         )
                     )
-                    # During execute_inference, set_encoder_hidden_states_for_inference_cycle will be called in full_inference_greedy anyway to overwrite the saved encoder_hidden_states
-                    # But explicit reset this flag is still beneficial
-                    self.t5_trt_decoder.persist_encoder_hidden_states = False
-                    # Because the same decoder is used for different inputs, need to reset the flags for different inputs.
-                    # TODO: In T5TRTDecoder, maybe a reset function is needed to capture this issue after each task.
-                    if metadata.other.kv_cache:
-                        self.t5_trt_decoder.persist_cross_attention_kv_cache = False
-                        self.t5_trt_decoder.use_non_kv_engine = metadata.other.kv_cache
+                    self.reset_decoder_state()
                         
                 if perplexity_reference is not None:
                     assert len(network_input) == len(perplexity_reference), "Encoder and decoder inputs must pair up"
