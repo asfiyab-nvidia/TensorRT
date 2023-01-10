@@ -96,6 +96,15 @@ class T5ModelTRTConfig(NNConfig):
 
     TARGET_MODELS = ["t5-small", "t5-base", "t5-large", "t5-3b", "t5-11b"]
     
+    # TensorRT maximum workspace size for each model variant. Set by TensorRT memory_pool_limits API
+    MAX_ENCODER_WORKSPACE_MB = {
+        TARGET_MODELS[0]: 512,
+        TARGET_MODELS[1]: 1024,
+        TARGET_MODELS[2]: 2048,
+        TARGET_MODELS[3]: 3072,
+        TARGET_MODELS[4]: 4096,
+    }
+
     MAX_DECODER_WORKSPACE_MB = {
         TARGET_MODELS[0]: 1024,
         TARGET_MODELS[1]: 2048,

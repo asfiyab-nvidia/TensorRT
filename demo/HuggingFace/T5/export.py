@@ -124,7 +124,8 @@ class T5DecoderTorchFile(TorchModelFile):
             self.lm_head = lm_head
             self.config = config
             self.device = "cuda" # HuggingFace's beam search requires to set self.device. Set it to avoid application crash
-            self.main_input_name = self.decoder.main_input_name
+            # Use hardcoded value to extend compatibility with older HF versions.
+            self.main_input_name = "input_ids"
             # trt uses cached and precomputed cross attention vs. framework uses the entire kv cache as output. Need to treat them differently.
             self.is_trt = is_trt
 
@@ -224,7 +225,8 @@ class T5EncoderTorchFile(TorchModelFile):
         def __init__(self, encoder):
             super().__init__()
             self.encoder = encoder
-            self.main_input_name = self.encoder.main_input_name
+            # Use hardcoded value to extend compatibility with older HF versions.
+            self.main_input_name = "input_ids"
 
         def forward(self, *input, **kwargs):
             return self.encoder(*input, **kwargs)[0]
@@ -266,7 +268,7 @@ class T5EncoderTRTEngine(TRTEngineFile):
 
     def __init__(self, model, network_metadata):
         super().__init__(model, T5EncoderConverter, network_metadata)
-        self.max_trt_workspace = 2048
+        self.max_trt_workspace = T5ModelTRTConfig.MAX_ENCODER_WORKSPACE_MB[network_metadata.variant]
 
     def get_network_definition(self, network_definition):
         return add_extra_fp32(network_definition)
