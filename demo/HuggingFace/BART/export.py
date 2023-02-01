@@ -125,7 +125,7 @@ class BARTDecoderTorchFile(TorchModelFile):
         @staticmethod
         def _reorder_cache(past, beam_idx):
             return BartForConditionalGeneration._reorder_cache(past, beam_idx)
-            
+
         def prepare_inputs_for_generation(self, input_ids, past=None, use_cache=None, **kwargs):
             # cut decoder_input_ids if past is used
             if past is not None:
@@ -139,7 +139,7 @@ class BARTDecoderTorchFile(TorchModelFile):
             # To really enable KV cache in HuggingFace, these args must be passed. Just specifying use_cache = True in BartConfig is not enough. Also see the additional "past_key_values" fields in the forward() return below.
             if self.config.use_cache:
                 ret["use_cache"] = use_cache
-                ret["past_key_values"] = past   
+                ret["past_key_values"] = past
 
             return ret
 
@@ -281,7 +281,7 @@ class BARTDecoderConverter(ModelFileConverter):
                     **inputs.get_torch_dynamic_axis_encoding(),
                     **outputs.get_torch_dynamic_axis_encoding(),
                 },
-                training=False,
+                training=torch.onnx.TrainingMode.EVAL,
                 **opt_args
             )
         else:
@@ -312,7 +312,7 @@ class BARTDecoderConverter(ModelFileConverter):
                     **inputs.get_torch_dynamic_axis_encoding(),
                     **outputs.get_torch_dynamic_axis_encoding(),
                 },
-                training=False,
+                training=torch.onnx.TrainingMode.EVAL,
                 **opt_args
             )
 
@@ -343,10 +343,10 @@ class BARTDecoderConverter(ModelFileConverter):
                     **inputs_non_kv.get_torch_dynamic_axis_encoding(),
                     **outputs.get_torch_dynamic_axis_encoding(),
                 },
-                training=False,
+                training=torch.onnx.TrainingMode.EVAL,
                 **opt_args
             )
-        
+
         if network_metadata.precision.fp16:
             G_LOGGER.debug("Clamping FP16 weights for BART")
             # move_t5_cast_op(output_fpath, output_fpath) # BART doesn't have T5's Add-Cast-Pow ordering issue
@@ -401,7 +401,7 @@ class BARTEncoderConverter(ModelFileConverter):
                 **inputs.get_torch_dynamic_axis_encoding(),
                 **outputs.get_torch_dynamic_axis_encoding(),
             },
-            training=False,
+            training=torch.onnx.TrainingMode.EVAL,
             **opt_args
         )
 

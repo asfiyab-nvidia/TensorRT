@@ -43,9 +43,9 @@ from GPT2.GPT2ModelConfig import GPT2ModelTRTConfig
 from NNDF.networks import NetworkMetadata, Dims
 from NNDF.logger import G_LOGGER
 from NNDF.models import (
-    TRTEngineFile, 
-    TorchModelFile, 
-    ONNXModelFile, 
+    TRTEngineFile,
+    TorchModelFile,
+    ONNXModelFile,
     ModelFileConverter,
 )
 
@@ -77,7 +77,7 @@ class GPT2TorchFile(TorchModelFile):
             if self.config.use_cache:
                 ret["use_cache"] = use_cache
                 ret["past_key_values"] = past
-            
+
             return ret
 
         def forward(self, input_ids, **kwargs):
@@ -86,7 +86,7 @@ class GPT2TorchFile(TorchModelFile):
             lm_logits = self.lm_head(hidden_states)
 
             return CausalLMOutputWithCrossAttentions(logits=lm_logits, past_key_values=transformer_outputs.past_key_values if self.config.use_cache else None,)
-        
+
         def _reorder_cache(self, past, beam_idx):
             """
             This function is used to re-order the :obj:`past_key_values` cache if
@@ -201,7 +201,7 @@ class GPT2Converter(ModelFileConverter):
                 result = old_forward(*args, **kwargs)
                 return result[0]
             gpt2_model.forward = _export_forward
-            
+
             torch.onnx._export(
                 gpt2_model,
                 input_ids,
@@ -267,7 +267,7 @@ class GPT2Converter(ModelFileConverter):
                     **inputs_non_kv.get_torch_dynamic_axis_encoding(),
                     **outputs.get_torch_dynamic_axis_encoding(),
                 },
-                training=False,
+                training=torch.onnx.TrainingMode.EVAL,
                 **opt_args
             )
 
