@@ -15,8 +15,9 @@
  * limitations under the License.
  */
 
-#include "layerNormPlugin.h"
+#include "common/dimsHelpers.h"
 #include "layerNormKernel.h"
+#include "layerNormPlugin.h"
 
 using namespace nvinfer1;
 using namespace plugin;
@@ -26,8 +27,8 @@ using nvinfer1::plugin::LayerNormPluginCreator;
 
 namespace
 {
-char const* kLAYER_NORM_PLUGIN_NAME{"LayerNorm"};
-char const* kLAYER_NORM_PLUGIN_VERSION{"1"};
+static std::string const kLAYER_NORM_PLUGIN_NAME{"LayerNorm"};
+static std::string const kLAYER_NORM_PLUGIN_VERSION{"1"};
 size_t constexpr kSERIALIZATION_SIZE{sizeof(float)};
 } // namespace
 
@@ -43,8 +44,8 @@ LayerNormPlugin::LayerNormPlugin(std::string const& name, void const* buffer, si
     PLUGIN_VALIDATE(buffer != nullptr);
     PLUGIN_VALIDATE(length == kSERIALIZATION_SIZE);
 
-    char const* d = static_cast<char const*>(buffer);
-    char const* a = d;
+    auto const* d = static_cast<char const*>(buffer);
+    auto const* a = d;
 
     mEpsilon = read<float>(d);
 
@@ -73,33 +74,66 @@ int32_t LayerNormPlugin::getNbOutputs() const noexcept
 
 DataType LayerNormPlugin::getOutputDataType(int32_t index, DataType const* inputTypes, int32_t nbInputs) const noexcept
 {
-    return inputTypes[0];
+    DataType ret{};
+    try
+    {
+        PLUGIN_VALIDATE(inputTypes != nullptr);
+        PLUGIN_VALIDATE(nbInputs > 0);
+        ret = inputTypes[0];
+    }
+    catch (std::exception const& e)
+    {
+        caughtError(e);
+    }
+    return ret;
 }
 
 DimsExprs LayerNormPlugin::getOutputDimensions(
     int32_t outputIndex, DimsExprs const* inputs, int32_t nbInputs, IExprBuilder& exprBuilder) noexcept
 {
-    return inputs[0];
+    DimsExprs ret{};
+    try
+    {
+        PLUGIN_VALIDATE(inputs != nullptr);
+        PLUGIN_VALIDATE(nbInputs > 0);
+        ret = inputs[0];
+    }
+    catch (std::exception const& e)
+    {
+        caughtError(e);
+    }
+    return ret;
 }
 
 bool LayerNormPlugin::supportsFormatCombination(
     int32_t pos, PluginTensorDesc const* inOut, int32_t nbInputs, int32_t nbOutputs) noexcept
 {
-
-    switch (pos)
+    try
     {
-    case 0:
-        return ((inOut[0].type == DataType::kFLOAT || inOut[0].type == DataType::kHALF)
-            && (inOut[0].format == TensorFormat::kLINEAR))
-            || ((inOut[0].type == DataType::kINT8)
-            && (inOut[0].format == TensorFormat::kCHW4 || inOut[0].format == TensorFormat::kCHW32));
-    case 1:
-    case 2:
+        PLUGIN_VALIDATE(inOut != nullptr);
+        PLUGIN_VALIDATE(nbInputs + nbOutputs > 0);
+
+        PLUGIN_VALIDATE(pos >= 0 && pos <= 3);
+        if (pos == 0)
+        {
+            return ((inOut[0].type == DataType::kFLOAT || inOut[0].type == DataType::kHALF)
+                       && (inOut[0].format == TensorFormat::kLINEAR))
+                || ((inOut[0].type == DataType::kINT8)
+                    && (inOut[0].format == TensorFormat::kCHW4 || inOut[0].format == TensorFormat::kCHW32));
+        }
+        if (pos == 3)
+        {
+            PLUGIN_VALIDATE(pos < nbInputs + nbOutputs);
+            return (inOut[pos].type == inOut[0].type) && (inOut[pos].format == inOut[0].format);
+        }
+
+        PLUGIN_VALIDATE(pos < nbInputs + nbOutputs);
         return (inOut[pos].type == inOut[0].type)
             || ((inOut[0].type == DataType::kINT8) && (inOut[pos].type == DataType::kHALF));
-    case 3: return (inOut[pos].type == inOut[0].type) && (inOut[pos].format == inOut[0].format);
-    default: // should NOT be here!
-        return false;
+    }
+    catch (std::exception const& e)
+    {
+        caughtError(e);
     }
     return false;
 }
@@ -118,58 +152,74 @@ size_t LayerNormPlugin::getWorkspaceSize(
 int32_t LayerNormPlugin::enqueue(PluginTensorDesc const* inputDesc, PluginTensorDesc const* outputDesc,
     void const* const* inputs, void* const* outputs, void* workspace, cudaStream_t stream) noexcept
 {
-
-    int32_t gridSize = inputDesc[0].dims.d[0] * inputDesc[0].dims.d[1];
-    int32_t nHiddenSize = 1;
-    for (int32_t i = 2; i < inputDesc[0].dims.nbDims; ++i)
+    try
     {
-        nHiddenSize *= inputDesc[0].dims.d[i];
-    }
-    int32_t status = -1;
+        PLUGIN_VALIDATE(inputDesc != nullptr);
+        PLUGIN_VALIDATE(inputs != nullptr);
+        for (auto const& i : {0, 1, 2})
+        {
+            PLUGIN_VALIDATE(inputs[i] != nullptr);
+        }
+        PLUGIN_VALIDATE(outputs != nullptr);
+        PLUGIN_VALIDATE(outputs[0] != nullptr);
+        PLUGIN_VALIDATE(outputDesc != nullptr);
 
-    switch (inputDesc[0].type)
-    {
-    case DataType::kFLOAT:
-    {
-        auto const input = static_cast<float const*>(inputs[0]);
-        auto const gamma = static_cast<float const*>(inputs[1]);
-        auto const beta = static_cast<float const*>(inputs[2]);
-        auto output = static_cast<float*>(outputs[0]);
+        int32_t gridSize = inputDesc[0].dims.d[0] * inputDesc[0].dims.d[1];
+        int64_t nHiddenSize = pluginInternal::volume(inputDesc[0].dims, 2, inputDesc[0].dims.nbDims);
+        int32_t status = -1;
 
-        status = computeLayerNorm<float>(gridSize, nHiddenSize, input, gamma, beta, output, mEpsilon, stream);
-        break;
-    }
-    case DataType::kHALF:
-    {
+        switch (inputDesc[0].type)
+        {
+        case DataType::kFLOAT:
+        {
+            auto const input = static_cast<float const*>(inputs[0]);
+            auto const gamma = static_cast<float const*>(inputs[1]);
+            auto const beta = static_cast<float const*>(inputs[2]);
+            auto output = static_cast<float*>(outputs[0]);
 
-        auto const input = static_cast<half const*>(inputs[0]);
-        auto const gamma = static_cast<half const*>(inputs[1]);
-        auto const beta = static_cast<half const*>(inputs[2]);
-        auto output = static_cast<half*>(outputs[0]);
+            status = computeLayerNorm<float>(gridSize, nHiddenSize, input, gamma, beta, output, mEpsilon, stream);
+            break;
+        }
+        case DataType::kHALF:
+        {
 
-        status = computeLayerNorm<half>(gridSize, nHiddenSize, input, gamma, beta, output, mEpsilon, stream);
-        break;
-    }
-    case DataType::kINT8:
-    {
-        float const dqScaleIn = inputDesc[0].scale;
-        float const qScale = 1.f / outputDesc[0].scale;
-        auto const input = static_cast<int8_t const*>(inputs[0]);
-        auto output = static_cast<int8_t*>(outputs[0]);
-        auto const gamma = static_cast<half const*>(inputs[1]);
-        auto const beta = static_cast<half const*>(inputs[2]);
+            auto const input = static_cast<half const*>(inputs[0]);
+            auto const gamma = static_cast<half const*>(inputs[1]);
+            auto const beta = static_cast<half const*>(inputs[2]);
+            auto output = static_cast<half*>(outputs[0]);
 
-        status = computeLayerNormQDQ(
-            gridSize, nHiddenSize, input, gamma, beta, output, dqScaleIn, qScale, mEpsilon, stream);
-        break;
+            status = computeLayerNorm<half>(gridSize, nHiddenSize, input, gamma, beta, output, mEpsilon, stream);
+            break;
+        }
+        case DataType::kINT8:
+        {
+            float const dqScaleIn = inputDesc[0].scale;
+            PLUGIN_ASSERT(outputDesc[0].scale != 0.F);
+            float const qScale = 1.F / outputDesc[0].scale;
+            auto const input = static_cast<int8_t const*>(inputs[0]);
+            auto output = static_cast<int8_t*>(outputs[0]);
+            auto const gamma = static_cast<half const*>(inputs[1]);
+            auto const beta = static_cast<half const*>(inputs[2]);
+
+            status = computeLayerNormQDQ(
+                gridSize, nHiddenSize, input, gamma, beta, output, dqScaleIn, qScale, mEpsilon, stream);
+            break;
+        }
+        case DataType::kBOOL:
+        case DataType::kINT32:
+        case DataType::kUINT8:
+        {
+            PLUGIN_ERROR("DataType not implemented yet");
+            break;
+        }
+        }
+        return status;
     }
-    default:
+    catch (std::exception const& e)
     {
-        PLUGIN_FAIL("DataType not implemented yet");
-        break;
+        caughtError(e);
     }
-    }
-    return status;
+    return -1;
 }
 
 void LayerNormPlugin::destroy() noexcept
@@ -191,16 +241,31 @@ size_t LayerNormPlugin::getSerializationSize() const noexcept
 
 void LayerNormPlugin::serialize(void* buffer) const noexcept
 {
-    PLUGIN_ASSERT(buffer != nullptr);
-    char* d = static_cast<char*>(buffer);
-    char* a = d;
-    write(d, mEpsilon); // float
-    PLUGIN_ASSERT(d == a + getSerializationSize());
+    try
+    {
+        PLUGIN_VALIDATE(buffer != nullptr);
+        auto* d = static_cast<char*>(buffer);
+        auto* const a = d;
+        write(d, mEpsilon); // float
+        PLUGIN_VALIDATE(d == a + getSerializationSize());
+    }
+    catch (std::exception const& e)
+    {
+        caughtError(e);
+    }
 }
 
 void LayerNormPlugin::setPluginNamespace(char const* pluginNamespace) noexcept
 {
-    mNameSpace = pluginNamespace;
+    try
+    {
+        PLUGIN_VALIDATE(pluginNamespace != nullptr);
+        mNameSpace = pluginNamespace;
+    }
+    catch (std::exception const& e)
+    {
+        caughtError(e);
+    }
 }
 
 char const* LayerNormPlugin::getPluginNamespace() const noexcept
@@ -210,12 +275,12 @@ char const* LayerNormPlugin::getPluginNamespace() const noexcept
 
 char const* LayerNormPlugin::getPluginType() const noexcept
 {
-    return kLAYER_NORM_PLUGIN_NAME;
+    return kLAYER_NORM_PLUGIN_NAME.c_str();
 }
 
 char const* LayerNormPlugin::getPluginVersion() const noexcept
 {
-    return kLAYER_NORM_PLUGIN_VERSION;
+    return kLAYER_NORM_PLUGIN_VERSION.c_str();
 }
 
 PluginFieldCollection LayerNormPluginCreator::mFC{};
@@ -235,6 +300,7 @@ IPluginV2* LayerNormPluginCreator::createPlugin(char const* name, PluginFieldCol
 {
     try
     {
+        PLUGIN_VALIDATE(name != nullptr);
         PLUGIN_VALIDATE(fc != nullptr);
         PluginField const* fields = fc->fields;
 
@@ -264,6 +330,7 @@ IPluginV2* LayerNormPluginCreator::deserializePlugin(
 {
     try
     {
+        PLUGIN_VALIDATE(name != nullptr);
         PLUGIN_VALIDATE(serialData != nullptr);
         return new LayerNormPlugin(name, serialData, serialLength);
     }
@@ -276,12 +343,12 @@ IPluginV2* LayerNormPluginCreator::deserializePlugin(
 
 char const* LayerNormPluginCreator::getPluginName() const noexcept
 {
-    return kLAYER_NORM_PLUGIN_NAME;
+    return kLAYER_NORM_PLUGIN_NAME.c_str();
 }
 
 char const* LayerNormPluginCreator::getPluginVersion() const noexcept
 {
-    return kLAYER_NORM_PLUGIN_VERSION;
+    return kLAYER_NORM_PLUGIN_VERSION.c_str();
 }
 
 PluginFieldCollection const* LayerNormPluginCreator::getFieldNames() noexcept

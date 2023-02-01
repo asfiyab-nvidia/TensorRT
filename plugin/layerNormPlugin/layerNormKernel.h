@@ -17,12 +17,12 @@
 #ifndef TRT_LAYERNORM_KERNEL_H
 #define TRT_LAYERNORM_KERNEL_H
 
-#include <cuda_runtime_api.h>
-#include <stdint.h>
-#include <cuda.h>
-#include "cuda_fp16.h"
-
 #include "common/checkMacrosPlugin.h"
+
+#include <cstdint>
+#include <cuda.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime_api.h>
 
 using half = __half;
 
