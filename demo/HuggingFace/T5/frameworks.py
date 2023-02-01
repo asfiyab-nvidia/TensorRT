@@ -50,7 +50,7 @@ from NNDF.networks import (
 )
 from T5.export import T5EncoderTorchFile, T5DecoderTorchFile
 from T5.T5ModelConfig import T5ModelTRTConfig, T5BenchmarkingArgs
-from T5.measurements import decoder_inference, encoder_inference, full_inference_greedy, full_inference_beam, calculate_perplexity
+from T5.measurements import decoder_inference, encoder_inference, full_inference, calculate_perplexity
 from NNDF.general_utils import confirm_folder_delete, NNFolderWorkspace
 
 
@@ -81,14 +81,10 @@ class T5FHuggingFace(FrameworkCommand):
         self.torch_t5_dir = pytorch_model_dir
 
         model = None
-        tfm_config = T5Config(
-            use_cache=cache_variant,
-            num_layers=T5ModelTRTConfig.NUMBER_OF_LAYERS[metadata.variant],
-        )
         if not os.path.exists(pytorch_model_dir):
             # Generate the pre-trained weights
-            model = T5ForConditionalGeneration(tfm_config).from_pretrained(
-                metadata.variant
+            model = T5ForConditionalGeneration.from_pretrained(
+                metadata.variant, use_cache = metadata.other.kv_cache
             )
             model.save_pretrained(pytorch_model_dir)
             print("Pytorch Model saved to {}".format(pytorch_model_dir))
@@ -96,8 +92,9 @@ class T5FHuggingFace(FrameworkCommand):
             print(
                 "Frameworks file already exists, skipping generation and loading from file instead."
             )
-            model = T5ForConditionalGeneration(tfm_config).from_pretrained(
-                pytorch_model_dir
+            model = T5ForConditionalGeneration.from_pretrained(
+                pytorch_model_dir,
+                use_cache = metadata.other.kv_cache
             )
 
         # These ONNX models can be converted using special encoder and decoder classes.
@@ -182,11 +179,7 @@ class T5FHuggingFace(FrameworkCommand):
 
         # By default, huggingface model structure is one giant file.
         t5_torch_fpath = network_fpaths.torch[0].fpath
-        config = T5Config(
-            use_cache=metadata.other.kv_cache,
-            num_layers=T5ModelTRTConfig.NUMBER_OF_LAYERS[metadata.variant],
-        )
-        t5_model = T5ForConditionalGeneration(config).from_pretrained(t5_torch_fpath)
+        t5_model = T5ForConditionalGeneration.from_pretrained(t5_torch_fpath, use_cache=metadata.other.kv_cache)
 
         t5_torch_encoder = T5EncoderTorchFile.TorchModule(t5_model.encoder)
         t5_torch_decoder = T5DecoderTorchFile.TorchModule(
@@ -209,7 +202,7 @@ class T5FHuggingFace(FrameworkCommand):
     ) -> Union[NetworkResult, BenchmarkingResult]:
 
         tokenizer, t5_torch_encoder, t5_torch_decoder = self.setup_tokenizer_and_model(metadata, network_fpaths)
-
+        hf_config = T5Config.from_pretrained(metadata.variant, use_cache = metadata.other.kv_cache)
         # Prepare the input tokens and find out output sequence length..
         if not benchmarking_mode:
             output_seq_len = T5ModelTRTConfig.MAX_SEQUENCE_LENGTH[metadata.variant]
@@ -218,7 +211,7 @@ class T5FHuggingFace(FrameworkCommand):
             max_seq_len = T5ModelTRTConfig.MAX_SEQUENCE_LENGTH[metadata.variant]
             input_seq_len = benchmarking_args.input_seq_len if benchmarking_args.input_seq_len > 0 else max_seq_len
             output_seq_len = benchmarking_args.output_seq_len if benchmarking_args.output_seq_len > 0 else max_seq_len
-            input_ids = torch.randint(0, T5ModelTRTConfig.VOCAB_SIZE, (batch_size, input_seq_len))
+            input_ids = torch.randint(0, hf_config.vocab_size, (batch_size, input_seq_len))
 
         encoder_last_hidden_state, encoder_e2e_time = encoder_inference(
             t5_torch_encoder, input_ids, timing_profile, use_cuda=(not use_cpu)
@@ -239,33 +232,19 @@ class T5FHuggingFace(FrameworkCommand):
             use_cache=metadata.other.kv_cache,
         )
         
-        if num_beams == 1:
-            decoder_output, full_e2e_runtime = full_inference_greedy(
-                t5_torch_encoder,
-                t5_torch_decoder,
-                input_ids,
-                tokenizer,
-                timing_profile,
-                max_length=output_seq_len,
-                min_length=T5ModelTRTConfig.MIN_OUTPUT_LENGTH[metadata.variant] if not benchmarking_mode else output_seq_len,
-                use_cuda=(not use_cpu),
-                batch_size=batch_size,
-                use_cache=metadata.other.kv_cache,
-            )
-        else:
-            decoder_output, full_e2e_runtime = full_inference_beam(
-                t5_torch_encoder,
-                t5_torch_decoder,
-                input_ids,
-                tokenizer,
-                timing_profile,
-                num_beams=num_beams,
-                max_length=output_seq_len,
-                min_length=T5ModelTRTConfig.MIN_OUTPUT_LENGTH[metadata.variant] if not benchmarking_mode else output_seq_len,
-                use_cuda=(not use_cpu),
-                batch_size=batch_size,
-                use_cache=metadata.other.kv_cache,
-            )
+        decoder_output, full_e2e_runtime = full_inference(
+            t5_torch_encoder,
+            t5_torch_decoder,
+            input_ids,
+            tokenizer,
+            timing_profile,
+            num_beams=num_beams,
+            max_length=output_seq_len,
+            min_length=T5ModelTRTConfig.MIN_OUTPUT_LENGTH[metadata.variant] if not benchmarking_mode else output_seq_len,
+            use_cuda=(not use_cpu),
+            batch_size=batch_size,
+            use_cache=metadata.other.kv_cache,
+        )
 
         # Prepare runtime results.
         runtime=[

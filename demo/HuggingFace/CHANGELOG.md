@@ -20,6 +20,11 @@ Uses [semantic versioning](https://semver.org/).
 - `Fixed` for any bug fixes.
 - `Security` in case of vulnerabilities.
 
+# [1.3.3] - 2023-01-04
+- Deprecated max workspace size flag to memory pool limits for TensorRT
+- Added t5-11b support
+- Changed T5 demo kv cache TRT memory organization to avoid D2D copy
+
 # [1.3.2] - 2022-11-17
 - Added beam search support for GPT2 demo
 - Added KV cache support for GPT2 demo

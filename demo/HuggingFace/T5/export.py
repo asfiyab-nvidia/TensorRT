@@ -118,53 +118,104 @@ class T5DecoderTorchFile(TorchModelFile):
         Decoder with lm-head attached.
         """
 
-        def __init__(self, decoder, lm_head, config):
+        def __init__(self, decoder, lm_head, config, is_trt = False):
             super().__init__()
             self.decoder = decoder
             self.lm_head = lm_head
             self.config = config
             self.device = "cuda" # HuggingFace's beam search requires to set self.device. Set it to avoid application crash
+            self.main_input_name = self.decoder.main_input_name
+            # trt uses cached and precomputed cross attention vs. framework uses the entire kv cache as output. Need to treat them differently.
+            self.is_trt = is_trt
 
-        def prepare_inputs_for_generation(self, input_ids, past=None, use_cache=None, **kwargs):
+        def prepare_inputs_for_generation(
+            self,
+            input_ids,
+            past=None,
+            use_cache=None,
+            **kwargs
+        ):
             # cut decoder_input_ids if past is used
             if past is not None:
                 input_ids = input_ids[:, -1:]
 
-            ret = {
+            return {
                 "input_ids": input_ids,
-                "encoder_hidden_states": kwargs["encoder_hidden_states"],
+                "encoder_hidden_states": kwargs["encoder_outputs"].last_hidden_state,
+                "use_cache": use_cache,
+                "past_key_values": past
             }
 
-            # To really enable KV cache in HuggingFace, these args must be passed. Just specifying use_cache = True in T5Config is not enough. Also see the additional "past_key_values" fields in the forward() return below.
-            if self.config.use_cache:
-                ret["use_cache"] = use_cache
-                ret["past_key_values"] = past
-
-            return ret
-
-        def forward(self, input_ids, encoder_hidden_states, **kwargs):
+        def forward(
+            self,
+            input_ids,
+            encoder_hidden_states,
+            use_cache = None,
+            past_key_values = None,
+            return_dict = None,
+            **kwargs,
+        ):
+            # self.decoder is the HuggingFace t5 decoder
             decoder_outputs = self.decoder(
                 input_ids=input_ids,
                 encoder_hidden_states=encoder_hidden_states,
+                use_cache=use_cache,
+                past_key_values=past_key_values,
+                return_dict=return_dict,
                 **kwargs
             )
 
             # self.config.d_model ** -0.5 for rescaling output on vocab.
-            # as seen in https://huggingface.co/transformers/_modules/transformers/models/t5/modeling_t5.html#T5ForConditionalGeneration
+            # as seen in https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5ForConditionalGeneration
             sequence_output = decoder_outputs[0] * self.config.d_model ** -0.5
             logits = self.lm_head(sequence_output)
+            if use_cache:
+                if self.is_trt:
+                    past_key_values = ()
+                    past_key_values_output = decoder_outputs[1]
+                    for layer_past_states in past_key_values_output:
+                        past_key_values = past_key_values + (layer_past_states[:2],)
+                else:
+                    past_key_values = decoder_outputs[1]
 
-            # temporary solution: force connection between encoder_hidden_states and outputs in KV cache mode, otherwise onnx.export elimiates it and cause inconsistency between non-KV cache & KV cache and also T5 & BART
-            if self.config.use_cache:
-                logits = logits.view(encoder_hidden_states.size(0),logits.size(1), logits.size(2)) # (batch_size, seq_len, vocab_size)
-            if not kwargs.get("return_dict", False):
-                return (logits,) + decoder_outputs[1:]
+            if not return_dict:
+                return (logits, past_key_values)
 
-            return Seq2SeqLMOutput(logits=logits, past_key_values=decoder_outputs.past_key_values if self.config.use_cache else None,)
+            return Seq2SeqLMOutput(
+                logits=logits,
+                past_key_values=past_key_values
+            )
 
     def __init__(self, model, network_metadata):
         super().__init__(model, T5DecoderConverter, network_metadata)
 
+class T5DecoderCrossAttentionKVGenerator(Module):
+    def __init__(self, decoder):
+        super().__init__()
+        self.decoder = decoder
+
+    def forward(self, encoder_hidden_states):
+        '''
+        Use same but simplified code as HF modeling_t5.py to generate cross attention kv cache from provided encoder_hidden_states
+        '''
+        present_key_values = ()
+        for layer_module in self.decoder.block:
+            # hidden_states and position_bias are required for the forward call, but irrelevant of cross attention kv cache calculation, so generate dummy variables
+            dummy_hidden_states = torch.zeros(1,1)
+            dummy_position_bias = torch.zeros(1, layer_module.layer[1].EncDecAttention.n_heads, 1, encoder_hidden_states.shape[1])
+            cross_attention_outputs = layer_module.layer[1](
+                hidden_states=dummy_hidden_states,
+                key_value_states=encoder_hidden_states,
+                use_cache=True,
+                past_key_value=None,
+                position_bias=dummy_position_bias
+            )
+            present_key_values = present_key_values + cross_attention_outputs[1]
+
+        return present_key_values
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
 
 class T5EncoderTorchFile(TorchModelFile):
     """Creation of a class to output only the last hidden state from the encoder."""
@@ -173,6 +224,7 @@ class T5EncoderTorchFile(TorchModelFile):
         def __init__(self, encoder):
             super().__init__()
             self.encoder = encoder
+            self.main_input_name = self.encoder.main_input_name
 
         def forward(self, *input, **kwargs):
             return self.encoder(*input, **kwargs)[0]
@@ -197,10 +249,11 @@ class T5DecoderONNXFile(ONNXModelFile):
 
 # TRT Engine File Encoding #
 class T5DecoderTRTEngine(TRTEngineFile):
-    DEFAULT_TRT_WORKSPACE_MB = 3072
 
     def __init__(self, model, network_metadata):
         super().__init__(model, T5DecoderConverter, network_metadata)
+        self.max_trt_workspace = T5ModelTRTConfig.MAX_DECODER_WORKSPACE_MB[network_metadata.variant]
+
 
     def get_network_definition(self, network_definition):
         return add_extra_fp32(network_definition)
@@ -210,10 +263,10 @@ class T5DecoderTRTEngine(TRTEngineFile):
 
 
 class T5EncoderTRTEngine(TRTEngineFile):
-    DEFAULT_TRT_WORKSPACE_MB = 2048
 
     def __init__(self, model, network_metadata):
         super().__init__(model, T5EncoderConverter, network_metadata)
+        self.max_trt_workspace = 2048
 
     def get_network_definition(self, network_definition):
         return add_extra_fp32(network_definition)
@@ -247,7 +300,7 @@ class T5DecoderConverter(ModelFileConverter):
         simplified_encoder = T5EncoderTorchFile.TorchModule(model.encoder)
         # Exports to ONNX
         decoder_with_lm_head = T5DecoderTorchFile.TorchModule(
-            model.decoder, model.lm_head, model.config
+            model.decoder, model.lm_head, model.config, is_trt = True
         )
 
         inputs = T5ModelTRTConfig.get_input_dims(network_metadata)["decoder"]
@@ -264,8 +317,8 @@ class T5DecoderConverter(ModelFileConverter):
         if not network_metadata.other.kv_cache:
             # This code allows for huggingface compatible torch class to use onnx exporter
             old_forward = decoder_with_lm_head.forward
-            def _export_forward(*args, **kwargs):
-                result = old_forward(*args, **kwargs)
+            def _export_forward(input_ids, encoder_hidden_states, **kwargs):
+                result = old_forward(input_ids, encoder_hidden_states, use_cache=False, **kwargs)
                 return result[0]
             decoder_with_lm_head.forward = _export_forward
 
@@ -349,15 +402,11 @@ class T5DecoderConverter(ModelFileConverter):
 
         if network_metadata.precision.fp16:
             G_LOGGER.debug("Clamping FP16 weights for T5")
+            move_t5_cast_op(output_fpath, output_fpath)
+            clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
             if network_metadata.other.kv_cache:
-                # both onnx files need clamp
-                move_t5_cast_op(non_kv_fpath, non_kv_fpath)
-                clamp_weights_onnx_to_fp16_bounds(non_kv_fpath, non_kv_fpath)
-                move_t5_cast_op(kv_fpath, kv_fpath)
-                clamp_weights_onnx_to_fp16_bounds(kv_fpath, kv_fpath)
-            else:
-                move_t5_cast_op(output_fpath, output_fpath)
-                clamp_weights_onnx_to_fp16_bounds(output_fpath, output_fpath)
+                move_t5_cast_op(output_fpath_kv_generator, output_fpath_kv_generator)
+                clamp_weights_onnx_to_fp16_bounds(output_fpath_kv_generator, output_fpath_kv_generator)
 
         return T5DecoderONNXFile(output_fpath, network_metadata)
 

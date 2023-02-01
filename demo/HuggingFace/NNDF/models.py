@@ -40,7 +40,7 @@ from torch import load, save
 from torch.nn import Module
 
 # tensorrt
-from tensorrt import PreviewFeature
+from tensorrt import PreviewFeature, MemoryPoolType
 
 # TRT-HuggingFace
 from NNDF.networks import NetworkMetadata
@@ -122,7 +122,7 @@ class ModelFileConverter:
             self.trt_inference_config = CreateConfig(
                 tf32=True,
                 fp16=network_metadata.precision.fp16,
-                max_workspace_size=result.DEFAULT_TRT_WORKSPACE_MB * 1024 * 1024,
+                memory_pool_limits = {MemoryPoolType.WORKSPACE: result.max_trt_workspace * 1024 * 1024},
                 profiles=profiles,
                 precision_constraints=("obey" if result.use_obey_precision_constraints() else None),
                 preview_features=preview_features
@@ -465,7 +465,6 @@ class ONNXModelFile(NNModelFile):
 
 
 class TRTEngineFile(NNModelFile):
-    DEFAULT_TRT_WORKSPACE_MB = 3072
 
     @abstractmethod
     def use_obey_precision_constraints(self):
@@ -485,6 +484,7 @@ class TRTEngineFile(NNModelFile):
     ):
         super().__init__(default_converter, network_metadata)
         self.fpath = model
+        self.max_trt_workspace = 3072
 
     def cleanup(self) -> None:
         G_LOGGER.debug("Removing saved engine model from location: {}".format(self.fpath))

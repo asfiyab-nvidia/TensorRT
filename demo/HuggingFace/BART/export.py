@@ -198,10 +198,10 @@ class BARTDecoderONNXFile(ONNXModelFile):
 
 # TRT Engine File Encoding #
 class BARTDecoderTRTEngine(TRTEngineFile):
-    DEFAULT_TRT_WORKSPACE_MB = 3072
 
     def __init__(self, model, network_metadata):
         super().__init__(model, BARTDecoderConverter, network_metadata)
+        self.max_trt_workspace = BARTModelTRTConfig.MAX_DECODER_WORKSPACE_MB[network_metadata.variant]
 
     def get_network_definition(self, network_definition):
         return add_extra_fp32(network_definition)
@@ -211,10 +211,10 @@ class BARTDecoderTRTEngine(TRTEngineFile):
 
 
 class BARTEncoderTRTEngine(TRTEngineFile):
-    DEFAULT_TRT_WORKSPACE_MB = 2048
 
     def __init__(self, model, network_metadata):
         super().__init__(model, BARTEncoderConverter, network_metadata)
+        self.max_trt_workspace = 2048
 
     def get_network_definition(self, network_definition):
         return add_extra_fp32(network_definition)

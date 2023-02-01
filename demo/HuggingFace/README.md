@@ -10,7 +10,7 @@ Currently, this repository supports the following models:
 
 2. [T5 (translation, premise task)](https://huggingface.co/transformers/model_doc/t5.html). The sample supports following variants of T5:
 
-    t5-small (60M), t5-base (220M), t5-large (770M), t5-3b(3B)
+    t5-small (60M), t5-base (220M), t5-large (770M), t5-3b(3B), t5-11b(11B)
 
 3. [BART (summarization task)](https://huggingface.co/docs/transformers/model_doc/bart.html). The sample supports the following variants of BART:
 
@@ -118,8 +118,9 @@ python3 run.py run BART [frameworks | trt] --variant facebook/bart-base --workin
 ```
 
 Notes:
-* K-V cache decoder with TensorRT requires exporting 2 onnx files and building separate engines respectively, called "non-kv" and "kv". For the first decoder run, KV Cache needs to be generated with only `input_ids` and `encoder_hidden_states`(if encoder_decoder), which is named "non-kv". For the other decoder iterations, previous KV Cache and other inputs are passed into the model to generate the updated KV Cache and decoder_hidden_states, which is named "kv". Because current onnx export cannot handle dynamic number of inputs, 2 onnx files with slightly different configurations are used together.
-* Therefore, under current implementation, large models like T5-3b may run out of device memory with TensorRT KV cache. We are currently working on reducing onnx model size for KV cache.
+* For BART and GPT2, K-V cache decoder with TensorRT requires exporting 2 onnx files and building separate engines respectively, called "non-kv" and "kv". For the first decoder run, KV Cache needs to be generated with only `input_ids` and `encoder_hidden_states`(if encoder_decoder), which is named "non-kv". For the other decoder iterations, previous KV Cache and other inputs are passed into the model to generate the updated KV Cache and decoder_hidden_states, which is named "kv". Because current onnx export cannot handle dynamic number of inputs, 2 onnx files with slightly different configurations are used together.
+* For T5, the code has been optimized according to the latest TensorRT features. (1) Cross attention kv does not change throughout decoding session, so it is only calculated once at the first decoding session. `onnx.export` cannot handle this logic properly for HuggingFace, so we creates a "cross attention kv generator" using only `encoder_hidden_states`. (2) TensorRT's "zero tensor" feature is used for self attention kv cache growth starting at empty. (3) Self attention input and output are the same location to avoid D2D copy for kv cache. A similar optimization will be ported to all the models.
+
 
 ## How to run with beam search
 
@@ -130,7 +131,7 @@ python3 run.py run BART [frameworks | trt] --variant facebook/bart-base --workin
 ```
 
 Notes:
-* K-V cache with beam search is now enabled for T5 and GPT2. BART models currently have accuracy issues while running beam search and K-V cache together with TensorRT. We are currently working on this issue.
+* K-V cache with beam search may have memory concurrency issues with TensorRT Optimization. We are currently working on this issue.
 
 
 ## How to run with TensorRT `FASTER_DYNAMIC_SHAPES_0805` preview feature
