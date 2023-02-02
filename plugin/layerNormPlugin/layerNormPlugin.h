@@ -83,7 +83,7 @@ class LayerNormPluginCreator : public nvinfer1::pluginInternal::BaseCreator
 public:
     LayerNormPluginCreator();
     ~LayerNormPluginCreator();
-
+    
     LayerNormPluginCreator(const LayerNormPluginCreator& /*other*/) = delete;
     LayerNormPluginCreator& operator=(const LayerNormPluginCreator& /*other*/) = delete;
     LayerNormPluginCreator(LayerNormPluginCreator&& /*other*/) noexcept = delete;
