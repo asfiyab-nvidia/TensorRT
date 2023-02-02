@@ -34,7 +34,7 @@ class LayerNormPlugin : public IPluginV2DynamicExt
 {
 public:
     LayerNormPlugin() = delete;
-    LayerNormPlugin(std::string const& name, float epsilon);
+    LayerNormPlugin(std::string const& name, float epsilon, int32_t axis);
     LayerNormPlugin(std::string const& name, void const* buffer, size_t length);
     ~LayerNormPlugin() override = default;
 
@@ -75,6 +75,7 @@ private:
     std::string mName;
     std::string mNameSpace;
     float mEpsilon{};
+    int32_t mAxis{};
 };
 
 class LayerNormPluginCreator : public nvinfer1::pluginInternal::BaseCreator

@@ -29,12 +29,13 @@ namespace
 {
 static std::string const kLAYER_NORM_PLUGIN_NAME{"LayerNorm"};
 static std::string const kLAYER_NORM_PLUGIN_VERSION{"1"};
-size_t constexpr kSERIALIZATION_SIZE{sizeof(float)};
+size_t constexpr kSERIALIZATION_SIZE{sizeof(float) + sizeof(int32_t)};
 } // namespace
 
-LayerNormPlugin::LayerNormPlugin(std::string const& name, float mEpsilon)
+LayerNormPlugin::LayerNormPlugin(std::string const& name, float epsilon, int32_t axis)
     : mName(name)
-    , mEpsilon(mEpsilon)
+    , mEpsilon(epsilon)
+    , mAxis(axis)
 {
 }
 
@@ -48,6 +49,7 @@ LayerNormPlugin::LayerNormPlugin(std::string const& name, void const* buffer, si
     auto const* a = d;
 
     mEpsilon = read<float>(d);
+    mAxis = read<int32_t>(d);
 
     PLUGIN_VALIDATE(d == a + length);
 }
@@ -164,8 +166,13 @@ int32_t LayerNormPlugin::enqueue(PluginTensorDesc const* inputDesc, PluginTensor
         PLUGIN_VALIDATE(outputs[0] != nullptr);
         PLUGIN_VALIDATE(outputDesc != nullptr);
 
-        int32_t gridSize = inputDesc[0].dims.d[0] * inputDesc[0].dims.d[1];
-        int64_t nHiddenSize = pluginInternal::volume(inputDesc[0].dims, 2, inputDesc[0].dims.nbDims);
+        auto const inputNbDims = inputDesc[0].dims.nbDims;
+        PLUGIN_VALIDATE(mAxis >= -inputNbDims && mAxis < inputNbDims, "Invalid first normalization dimension");
+
+        auto const normAxisNonNegative = mAxis >= 0 ? mAxis : (inputNbDims + mAxis);
+
+        int64_t gridSize = pluginInternal::volume(inputDesc[0].dims, 0, normAxisNonNegative);
+        int64_t nHiddenSize = pluginInternal::volume(inputDesc[0].dims, normAxisNonNegative, inputNbDims);
         int32_t status = -1;
 
         switch (inputDesc[0].type)
@@ -245,8 +252,9 @@ void LayerNormPlugin::serialize(void* buffer) const noexcept
     {
         PLUGIN_VALIDATE(buffer != nullptr);
         auto* d = static_cast<char*>(buffer);
-        auto* const a = d;
-        write(d, mEpsilon); // float
+        auto const* a = d;
+        write(d, mEpsilon);
+        write(d, mAxis);
         PLUGIN_VALIDATE(d == a + getSerializationSize());
     }
     catch (std::exception const& e)
@@ -290,6 +298,7 @@ LayerNormPluginCreator::LayerNormPluginCreator()
 {
     mPluginAttributes.clear();
     mPluginAttributes.emplace_back(PluginField("epsilon", nullptr, PluginFieldType::kFLOAT32, 1));
+    mPluginAttributes.emplace_back(PluginField("axis", nullptr, PluginFieldType::kINT32, 1));
     mFC.nbFields = mPluginAttributes.size();
     mFC.fields = mPluginAttributes.data();
 }
@@ -306,6 +315,7 @@ IPluginV2* LayerNormPluginCreator::createPlugin(char const* name, PluginFieldCol
 
         // default values
         float mEpsilon = 1e-5F;
+        int32_t mAxis = -1; // default is normalizing over last axis
 
         for (int32_t i = 0; i < fc->nbFields; ++i)
         {
@@ -313,10 +323,15 @@ IPluginV2* LayerNormPluginCreator::createPlugin(char const* name, PluginFieldCol
             if (!strcmp(attrName, "epsilon"))
             {
                 PLUGIN_VALIDATE(fields[i].type == PluginFieldType::kFLOAT32);
-                mEpsilon = static_cast<float>(*(static_cast<float const*>(fields[i].data)));
+                mEpsilon = *(static_cast<float const*>(fields[i].data));
+            }
+            if (!strcmp(attrName, "axis"))
+            {
+                PLUGIN_VALIDATE(fields[i].type == PluginFieldType::kINT32);
+                mAxis = *(static_cast<int32_t const*>(fields[i].data));
             }
         }
-        return new LayerNormPlugin(name, mEpsilon);
+        return new LayerNormPlugin(name, mEpsilon, mAxis);
     }
     catch (std::exception const& e)
     {

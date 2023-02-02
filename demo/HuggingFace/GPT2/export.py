@@ -61,7 +61,7 @@ class GPT2TorchFile(TorchModelFile):
             self.lm_head = lm_head
             self.config = config
             self.device = "cuda" # WAR to avoid beam search in framework
-            self.main_input_name = self.transformer.main_input_name
+            self.main_input_name = "input_ids" # For better HuggingFace version compatibility
 
         def prepare_inputs_for_generation(self, input_ids, past = None, use_cache=None, **kwargs):
             # Todo (@pchadha): add position_ids, token_type_ids support

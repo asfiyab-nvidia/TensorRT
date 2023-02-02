@@ -258,7 +258,7 @@ class BARTTRTDecoder(TRTHFRunner):
                 set_kv_data(self.input_types, "past", i, kv_type_dict)
                 set_kv_data(self.output_types,"present", i, kv_type_dict)
 
-                self_attention_kv_shape = (self.batch_size * num_beams, self.num_heads, self.max_output_length, self.embedding_size_per_head)
+                self_attention_kv_shape = (self.batch_size * num_beams, self.num_heads, self.max_output_length - 1, self.embedding_size_per_head)
                 cross_attention_kv_shape = (self.batch_size * num_beams, self.num_heads, self.max_sequence_length, self.embedding_size_per_head)
                 kv_shape_dict = {"encoder": cross_attention_kv_shape, "decoder": self_attention_kv_shape}
 
@@ -914,9 +914,9 @@ class BARTTRT(TRTInferenceCommand):
             num_decoder_layers = BARTModelTRTConfig.NUMBER_OF_DECODER_LAYERS[metadata.variant]
 
             self_attention_profile = {
-                "min": (batch_size * num_beams, num_heads, 1, embedding_size_per_head),
-                "opt": (batch_size * num_beams, num_heads, opt_output_seq_len, embedding_size_per_head),
-                "max": (batch_size * num_beams, num_heads, max_output_length, embedding_size_per_head),
+                "min": (batch_size * num_beams, num_heads, 0, embedding_size_per_head),
+                "opt": (batch_size * num_beams, num_heads, opt_output_seq_len - 1, embedding_size_per_head),
+                "max": (batch_size * num_beams, num_heads, max_output_length - 1, embedding_size_per_head),
             }
             cross_attention_profile = {
                 "min": (batch_size * num_beams, num_heads, 1, embedding_size_per_head),
