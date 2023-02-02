@@ -27,9 +27,9 @@
 
 using namespace nvinfer1;
 using namespace nvinfer1::plugin;
+using namespace nvinfer1::plugin::bert;
 
-namespace bert
-{
+
 
 // Clip plugin specific constants
 namespace
@@ -961,6 +961,5 @@ const char* SkipLayerNormVarSeqlenPluginCreator::getPluginNamespace() const noex
 {
     return mNamespace.c_str();
 }
-} // namespace bert
 
 #endif // CUDA_VERSION >= 10010

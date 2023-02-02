@@ -27,6 +27,11 @@
 #include "common/bertCommon.h"
 #include <string>
 #include <vector>
+
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -138,6 +143,8 @@ private:
     std::string mNamespace;
 };
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // TRT_EMB_LAYER_NORM_PLUGIN_H
 
 #endif // CUDA_VERSION >= 10010

@@ -28,6 +28,10 @@
 
 using namespace nvinfer1;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -123,3 +127,5 @@ template int32_t embSkipLayerNormHFace<half>(cudaStream_t, int32_t, int32_t, int
     half*);
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1

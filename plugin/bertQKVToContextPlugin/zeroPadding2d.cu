@@ -22,6 +22,10 @@
 
 using namespace nvinfer1;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -219,3 +223,5 @@ MhaRunParameter QkvPaddingRunner::patchMhaArgs(const PluginTensorDesc* inputDesc
 }
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1

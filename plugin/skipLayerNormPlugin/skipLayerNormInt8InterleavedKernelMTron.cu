@@ -25,6 +25,10 @@
 
 using namespace nvinfer1;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -405,3 +409,5 @@ int32_t launch_small_mtron(cudaStream_t stream, const int32_t ld, const int tota
 }
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1

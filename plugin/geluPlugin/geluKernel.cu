@@ -29,6 +29,10 @@
 
 using namespace nvinfer1;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -132,5 +136,6 @@ int computeGeluBias(
 }
 
 } // namespace bert
-
+} // namespace plugin
+} // namespace nvinfer1
 #endif // CUDA_VERSION >= 10010

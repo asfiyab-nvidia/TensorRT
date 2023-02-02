@@ -28,6 +28,10 @@
 #include <string>
 #include <vector>
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -448,6 +452,8 @@ private:
 };
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // TRT_QKV_TO_CONTEXT_PLUGIN_H
 
 #endif // CUDA_VERSION >= 10010

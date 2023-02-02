@@ -15,6 +15,10 @@
  * limitations under the License.
  */
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 unsigned char cubin_fmha_v2_int8_512_64_sm75_cu_cubin[] = {
@@ -25033,3 +25037,5 @@ unsigned char cubin_fmha_v2_int8_512_64_sm75_cu_cubin[] = {
 };
 unsigned int cubin_fmha_v2_int8_512_64_sm75_cu_cubin_len = 300136;
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1

@@ -25,6 +25,11 @@
 #include "common/bertCommon.h"
 #include <string>
 #include <vector>
+
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -187,4 +192,6 @@ public:
 };
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // TRT_EMB_LAYER_NORM_VARSEQ_PLUGIN_H

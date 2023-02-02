@@ -22,6 +22,10 @@
 #include "common/bertCommon.h"
 #include <cstdint>
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 struct Fused_multihead_attention_params_v2
@@ -930,4 +934,6 @@ inline const FusedMultiHeadAttentionXMMAKernelV2* getXMMAKernelsV2(Data_type typ
 }
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // _BERT_FMHAV2_FMHAV2

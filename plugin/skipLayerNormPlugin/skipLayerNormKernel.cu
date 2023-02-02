@@ -31,6 +31,10 @@
 using namespace nvinfer1;
 using namespace nvinfer1::plugin;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -295,5 +299,6 @@ template int computeSkipLayerNorm<half, true>(cudaStream_t, const int, const int
 template int computeSkipLayerNorm<half, false>(cudaStream_t, const int, const int, const half*, const half*, const half*, const half*, half*, const half*);
 
 } // namespace bert
-
+} // namespace plugin
+} // namespace nvinfer1
 #endif // CUDA_VERSION >= 10010

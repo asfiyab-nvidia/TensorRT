@@ -29,6 +29,11 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <vector>
+
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 static inline size_t get_size_in_bytes(size_t n, Data_type dtype)
@@ -509,4 +514,6 @@ inline const FusedMultiHeadAttentionXMMAKernel* getXMMAKernels(Data_type type, u
 }
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // _BERT_FMHA_FMHA

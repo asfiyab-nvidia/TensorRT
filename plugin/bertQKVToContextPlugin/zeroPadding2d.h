@@ -20,6 +20,10 @@
 #include "NvInferPlugin.h"
 #include <cuda_runtime.h>
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -55,4 +59,6 @@ private:
 };
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // TRT_ZERO_PADDING_2D_H

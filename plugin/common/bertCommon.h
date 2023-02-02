@@ -82,6 +82,10 @@ constexpr size_t packedMaskSize96 = xmmasM128 * threadsPerCta128;
 constexpr size_t packedMaskSize128 = xmmasM128 * threadsPerCta128;
 constexpr size_t packedMaskSize384 = xmmasM384 * threadsPerCta384;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -479,6 +483,8 @@ inline nvinfer1::DataType fieldTypeToDataType(const nvinfer1::PluginFieldType ft
 }
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // BERT_COMMON_H
 
 #endif // CUDA_VERSION >= 10010

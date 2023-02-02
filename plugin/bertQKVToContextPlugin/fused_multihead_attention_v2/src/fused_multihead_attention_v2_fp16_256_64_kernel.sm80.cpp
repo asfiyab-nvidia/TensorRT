@@ -15,6 +15,10 @@
  * limitations under the License.
  */
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 unsigned char fused_multihead_attention_v2_fp16_256_64_kernel_sm80_cubin[] = {0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01,
@@ -3434,3 +3438,5 @@ unsigned char fused_multihead_attention_v2_fp16_256_64_kernel_sm80_cubin[] = {0x
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 unsigned int fused_multihead_attention_v2_fp16_256_64_kernel_sm80_cubin_len = 64864;
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1

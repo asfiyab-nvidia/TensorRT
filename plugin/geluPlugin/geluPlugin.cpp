@@ -28,9 +28,7 @@
 
 using namespace nvinfer1;
 using namespace nvinfer1::plugin;
-
-namespace bert
-{
+using namespace nvinfer1::plugin::bert;
 
 namespace
 {
@@ -346,7 +344,5 @@ const char* GeluPluginDynamicCreator::getPluginNamespace() const noexcept
 {
     return mNamespace.c_str();
 }
-
-} // namespace bert
 
 #endif // CUDA_VERSION >= 10010

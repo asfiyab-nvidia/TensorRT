@@ -25,6 +25,10 @@
 
 using namespace nvinfer1;
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 
@@ -348,4 +352,5 @@ int launch_small_hface(cudaStream_t stream, const int32_t ld, const int32_t tota
 }
 
 } // namespace bert
-
+} // namespace plugin
+} // namespace nvinfer1

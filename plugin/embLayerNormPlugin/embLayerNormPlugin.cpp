@@ -28,9 +28,9 @@
 
 using namespace nvinfer1;
 using namespace nvinfer1::plugin;
+using namespace nvinfer1::plugin::bert;
 
-namespace bert
-{
+
 namespace
 {
 char const* EMB_LAYER_NORM_VERSION{"1"};
@@ -663,6 +663,5 @@ char const* EmbLayerNormPluginDynamicCreator::getPluginNamespace() const noexcep
 {
     return mNamespace.c_str();
 }
-} // namespace bert
 
 #endif // CUDA_VERSION >= 10010

@@ -28,6 +28,10 @@
 #include <string>
 #include <vector>
 
+namespace nvinfer1
+{
+namespace plugin
+{
 namespace bert
 {
 template <bool hasBias>
@@ -221,6 +225,8 @@ private:
 };
 
 } // namespace bert
+} // namespace plugin
+} // namespace nvinfer1
 #endif // TRT_SKIP_LAYER_NORM_PLUGIN_H
 
 #endif // CUDA_VERSION >= 10010
