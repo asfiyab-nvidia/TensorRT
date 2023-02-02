@@ -219,7 +219,7 @@ class GPT2Converter(ModelFileConverter):
         else:
             decoder_output = gpt2_model(input_ids[:,:-1])
             past_key_values = decoder_output[1]
-            
+
             decoder_root, decoder_fullname = os.path.split(output_fpath)
             # Split kv and non kv onnx into separate folders to avoid weight overlap
             non_kv_root = os.path.join(decoder_root, "non-kv")
@@ -227,7 +227,7 @@ class GPT2Converter(ModelFileConverter):
             decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
             non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
             kv_fpath = os.path.join(kv_root, decoder_fullname)
-            
+
             # Exporting the kv cache engine
             old_forward = gpt2_model.forward
             def _export_forward(input_ids, past_key_values):
@@ -255,7 +255,7 @@ class GPT2Converter(ModelFileConverter):
                 result = old_forward(input_ids, use_cache=True)
                 return (result[0], result[1])
             gpt2_model.forward = _export_forward_non_kv
-            
+
             # inputs are same as non-kv model
             # outputs are same as kv model
             dict_inputs = inputs.get_dims()

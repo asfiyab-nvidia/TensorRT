@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-ARG CUDA_VERSION=11.4.2
+ARG CUDA_VERSION=11.4.1
 ARG OS_VERSION=20.04
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${OS_VERSION}
