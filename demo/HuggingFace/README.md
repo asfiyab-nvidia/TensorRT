@@ -18,10 +18,19 @@ Currently, this repository supports the following models:
 
 ## Setup
 
-Follow the setup steps in the TensorRT OSS repository, and then install the additional dependencies below. It is recommended to experiment inside Docker container.
+Follow the setup steps in the TensorRT OSS repository. It is recommended to experiment inside Docker container.
+For a smoother setup experience, it is recommended to use [Poetry](https://python-poetry.org/) to install requirements and execute:
 
-```python
-pip3 install -r requirements.txt
+```bash
+poetry install # one-time setup
+poetry run python run.py <args> # execute program
+```
+
+However requirements.txt are also provided.
+
+```bash
+pip3 install -r requirements.txt # install requirements
+python run.py <args> # execute program
 ```
 
 **Please note that due to end-of-life, Python <= 3.6 is no longer supported.**
