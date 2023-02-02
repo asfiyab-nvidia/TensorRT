@@ -303,13 +303,13 @@ class BARTDecoderConverter(ModelFileConverter):
                 result = old_forward(input_ids, encoder_hidden_states, past_key_values=past_key_values)
                 return (result[0], result[1])
             decoder_with_lm_head_and_bias.forward = _export_forward
-            
+
             torch.onnx.export(
                 decoder_with_lm_head_and_bias,
                 (input_ids[:,-1:], encoder_hidden_states,past_key_values),
-                # (1) input_ids should be the t token (last one) while past_key_values is 0 to t-1 caches 
+                # (1) input_ids should be the t token (last one) while past_key_values is 0 to t-1 caches
                 # (2) since past_key_values is kwargs, ideally use "(input_ids[:,-1:], encoder_hidden_states, {"past_key_values": past_key_values})",
-                # but onnx.export seems to unable to take kwargs properly (although PyTorch 1.11 claims it supports already). 
+                # but onnx.export seems to unable to take kwargs properly (although PyTorch 1.11 claims it supports already).
                 # Therefore, we need to wrap inside _export_forward() and make past_key_values indeed a kwargs
                 kv_fpath,
                 export_params=True,

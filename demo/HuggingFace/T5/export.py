@@ -341,67 +341,49 @@ class T5DecoderConverter(ModelFileConverter):
             )
         else:
             encoder_hidden_states = simplified_encoder(input_ids)
-            decoder_output = decoder_with_lm_head(input_ids[:,:-1], encoder_hidden_states) # decoder output at t-1 step (logits, past_key_values from 0 to t-1)
+            kv_decoder_input_ids = input_ids[:,-1:]
+            decoder_output = decoder_with_lm_head.decoder(input_ids=kv_decoder_input_ids, encoder_hidden_states=encoder_hidden_states, use_cache=True, past_key_values=None) # decoder output at t-1 step (logits, past_key_values from 0 to t-1)
             past_key_values = decoder_output[1]
-
-            decoder_root, decoder_fullname = os.path.split(output_fpath)
-            # Split kv and non kv onnx into separate folders to avoid weight overlap
-            non_kv_root = os.path.join(decoder_root, "non-kv")
-            kv_root = os.path.join(decoder_root, "kv")
-            decoder_name, decoder_ext = os.path.splitext(decoder_fullname)
-            non_kv_fpath = os.path.join(non_kv_root, decoder_name + "-non-kv" + decoder_ext)
-            kv_fpath = os.path.join(kv_root, decoder_fullname)
-
             # This code allows for huggingface compatible torch class to use onnx exporter (change just before onnx.export)
             old_forward = decoder_with_lm_head.forward
             def _export_forward(input_ids, encoder_hidden_states, past_key_values):
-                result = old_forward(input_ids, encoder_hidden_states, past_key_values=past_key_values)
-                return (result[0], result[1])
+                result = old_forward(input_ids, encoder_hidden_states, past_key_values=past_key_values, use_cache=True)
+                return result
             decoder_with_lm_head.forward = _export_forward
-            
+
             torch.onnx.export(
                 decoder_with_lm_head,
-                (input_ids[:,-1:], encoder_hidden_states,past_key_values),
-                # (1) input_ids should be the t token (last one) while past_key_values is 0 to t-1 caches 
-                # (2) since past_key_values is kwargs, ideally use "(input_ids[:,-1:], encoder_hidden_states, {"past_key_values": past_key_values})", 
-                # but onnx.export seems to unable to take kwargs properly (although PyTorch 1.11 claims it supports already). 
-                # Therefore, we need to wrap inside _export_forward() and make past_key_values indeed a kwargs
-                kv_fpath,
+                (kv_decoder_input_ids, encoder_hidden_states, past_key_values),
+                output_fpath,
                 export_params=True,
                 opset_version=12,
-                input_names=inputs.get_names(),
-                output_names=outputs.get_names(),
+                input_names=inputs[1].get_names(),
+                output_names=outputs[1].get_names(),
                 dynamic_axes={
-                    **inputs.get_torch_dynamic_axis_encoding(),
-                    **outputs.get_torch_dynamic_axis_encoding(),
+                    **inputs[1].get_torch_dynamic_axis_encoding(),
+                    **outputs[1].get_torch_dynamic_axis_encoding(),
                 },
                 training=torch.onnx.TrainingMode.EVAL,
                 **opt_args
             )
 
-            # dual-engine approach: also export non-kv onnx model. Note that this is different from the original "non-kv" model. This one traces the `use_cache` path and have present_key_values output
-            def _export_forward(input_ids, encoder_hidden_states, use_cache):
-                result = old_forward(input_ids, encoder_hidden_states, use_cache=use_cache)
-                return (result[0], result[1])
-            decoder_with_lm_head.forward = _export_forward
-
-            # inputs are same as non-kv model
-            # outputs are same as kv model
-            dict_inputs = inputs.get_dims()
-            dict_inputs_non_kv = OrderedDict({k: dict_inputs[k] for k in ["input_ids", "encoder_hidden_states"]})
-            inputs_non_kv = Dims(dict_inputs_non_kv)
-
+            cross_attention_kv_generator = T5DecoderCrossAttentionKVGenerator(decoder_with_lm_head.decoder)
+            decoder_folder, decoder_name = os.path.split(output_fpath)
+            decoder_name, decoder_ext = os.path.splitext(decoder_name)
+            output_fpath_kv_generator_folder = os.path.join(decoder_folder, "cross_attention_kv_generator")
+            os.makedirs(output_fpath_kv_generator_folder, exist_ok = True)
+            output_fpath_kv_generator = os.path.join(output_fpath_kv_generator_folder, decoder_name + "-cross_attention_kv_generator" + decoder_ext)
             torch.onnx.export(
-                decoder_with_lm_head,
-                (input_ids[:,-1:], encoder_hidden_states, True),
-                non_kv_fpath,
+                cross_attention_kv_generator,
+                (encoder_hidden_states),
+                output_fpath_kv_generator,
                 export_params=True,
                 opset_version=12,
-                input_names=inputs_non_kv.get_names(),
-                output_names=outputs.get_names(),
+                input_names=inputs[0].get_names(),
+                output_names=outputs[0].get_names(),
                 dynamic_axes={
-                    **inputs_non_kv.get_torch_dynamic_axis_encoding(),
-                    **outputs.get_torch_dynamic_axis_encoding(),
+                    **inputs[0].get_torch_dynamic_axis_encoding(),
+                    **outputs[0].get_torch_dynamic_axis_encoding(),
                 },
                 training=torch.onnx.TrainingMode.EVAL,
                 **opt_args

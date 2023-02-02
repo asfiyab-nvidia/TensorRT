@@ -68,10 +68,6 @@ class T5FHuggingFace(FrameworkCommand):
         self, metadata: NetworkMetadata, workspace: NNFolderWorkspace
     ) -> NetworkModels:
 
-        cache_variant = False
-        if metadata.other.kv_cache:
-            cache_variant = True
-
         trt_t5_config = self.config
         metadata_serialized = trt_t5_config.get_metadata_string(metadata)
         workspace_dir, encoder_onnx_root, decoder_onnx_root = workspace.set_model_path(metadata_serialized, is_encoder_decoder = True)
